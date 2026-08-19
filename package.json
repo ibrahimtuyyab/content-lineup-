@@ -1,0 +1,30 @@
+{
+  "name": "contentlineup-site",
+  "version": "1.2.0",
+  "private": true,
+  "type": "module",
+  "description": "ContentLineup marketing website — zero-dependency SSG backed by a Supabase content database",
+  "scripts": {
+    "build": "node build.mjs",
+    "serve": "node serve.mjs",
+    "start": "node build.mjs && node serve.mjs",
+    "dev": "node build.mjs && node serve.mjs",
+    "db:schema": "node db/schema-print.mjs",
+    "db:push": "node db/push.mjs",
+    "db:check": "node db/cli.mjs check",
+    "posts": "node db/cli.mjs",
+    "admin": "node admin.mjs",
+    "mirror:init": "node db/migrate.mjs",
+    "mirror:seed": "node db/seed.mjs",
+    "og": "node tools/make-og.mjs",
+    "audit": "node tools/audit.mjs",
+    "shots": "node tools/shots.mjs",
+    "db:apply": "node db/apply-schema.mjs",
+    "db:setup": "node db/apply-schema.mjs && node db/push.mjs && node build.mjs",
+    "db:copy": "node db/copy-schema.mjs",
+    "servers": "powershell -ExecutionPolicy Bypass -File tools/servers.ps1"
+  },
+  "engines": {
+    "node": ">=22.5"
+  }
+}

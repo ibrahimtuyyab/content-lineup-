@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 160" fill="none" role="img" aria-label="ContentLineup">
+  <!-- Mark -->
+  <g transform="translate(16 32)">
+    <g stroke="#0A0A0A" stroke-width="12" stroke-linecap="round">
+      <line x1="0" y1="16" x2="40" y2="16"/>
+      <line x1="52" y1="16" x2="78" y2="16"/>
+      <line x1="0" y1="48" x2="52" y2="48"/>
+      <line x1="64" y1="48" x2="92" y2="48"/>
+      <line x1="0" y1="80" x2="32" y2="80"/>
+      <line x1="44" y1="80" x2="70" y2="80"/>
+    </g>
+    <path d="M 104 16 L 160 48 L 104 80 L 116 48 Z" fill="#C2410C"/>
+  </g>
+  <!-- Wordmark -->
+  <g font-family="Fraunces, 'Times New Roman', Georgia, serif" font-weight="600">
+    <text x="210" y="104" font-size="80" fill="#0A0A0A" letter-spacing="-2">Content<tspan fill="#C2410C">Lineup</tspan></text>
+  </g>
+</svg>

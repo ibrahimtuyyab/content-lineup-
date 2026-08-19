@@ -1,0 +1,12 @@
+# Normalise line endings so diffs stay clean across Windows/macOS/Linux.
+* text=auto eol=lf
+
+# Shell and PowerShell scripts
+*.sh   text eol=lf
+*.ps1  text eol=crlf
+
+# Binary — never touch these
+*.png     binary
+*.woff2   binary
+*.db      binary
+*.zip     binary

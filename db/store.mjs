@@ -6,7 +6,7 @@
 // migration painless, and what keeps them working mid-migration.
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { hasSupabase, SUPABASE_URL } from './env.mjs';
+import { hasSupabase, SUPABASE_URL, hasNeon, neonHost } from './env.mjs';
 
 const MIRROR = join(resolve(import.meta.dirname, '..'), 'data', 'content.db');
 
@@ -53,12 +53,46 @@ const supabaseStore = (sb) => ({
   stats: sb.stats,
 });
 
+const neonStore = (n) => ({
+  ready: () => n.ping(),
+  allPosts: n.allPosts,
+  livePosts: n.livePosts,
+  postBySlug: n.postBySlug,
+  scheduledPosts: n.scheduledPosts,
+  savePost: n.savePost,
+  setStatus: n.setStatus,
+  deletePost: n.deletePost,
+  revisions: n.revisions,
+  restoreRevision: n.restoreRevision,
+  allCategories: n.allCategories,
+  allAuthors: n.allAuthors,
+  upsertAuthor: n.upsertAuthor,
+  upsertCategory: n.upsertCategory,
+  stats: n.stats,
+});
+
 let api;
 let _driver = 'sqlite';
 let _target = 'data/content.db';
 let _note = '';
 
-if (hasSupabase) {
+if (hasNeon) {
+  const n = await import('./neon.mjs');
+  try {
+    await n.ping();
+    api = neonStore(n);
+    _driver = 'neon';
+    _target = neonHost();
+  } catch (err) {
+    if (!existsSync(MIRROR)) throw err;
+    api = await sqliteStore();
+    _note =
+      'Neon is configured but not ready yet — using the local mirror instead.\n' +
+      `  ${err.message.split('\n')[0]}\n` +
+      '  Apply the schema and migrate:  npm run neon:setup';
+    console.warn('\n' + _note + '\n');
+  }
+} else if (hasSupabase) {
   const sb = await import('./supabase.mjs');
   try {
     // Probe once at startup. Configured-but-not-ready is a normal state during

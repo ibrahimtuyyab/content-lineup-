@@ -107,7 +107,10 @@ const server = createServer((req, res) => {
   }
 
   const isHtml = entry.ext === '.html';
-  const immutable = /\.(woff2|png|jpg|webp|avif|svg|ico)$/i.test(target);
+  // Content-addressed assets (styles.<hash>.css, app.<hash>.js) join the media
+  // files on a one-year immutable cache: the URL changes when the bytes do.
+  const immutable =
+    /\.(woff2|png|jpg|webp|avif|svg|ico)$/i.test(target) || /\.[0-9a-f]{8,}\.(css|js)$/i.test(target);
 
   const headers = {
     'Content-Type': entry.type,

@@ -14,7 +14,7 @@ import {
 } from '../lib/html.mjs';
 import { related } from '../lib/article.mjs';
 import { posts, categories, byCategory, relatedTo } from '../data/content.mjs';
-import { site, cta } from '../data/site.mjs';
+import { site, cta, topicClusters } from '../data/site.mjs';
 
 const fmtDate = (iso) =>
   new Date(iso + 'T00:00:00Z').toLocaleDateString('en-US', {
@@ -41,6 +41,44 @@ const postCard = (p) => `
   </div>
 </a>`;
 
+const clusterBand = () => {
+  const bySlug = new Map(posts.map((post) => [post.slug, post]));
+  return `
+<section class="sec sec-paper" id="topics">
+  <div class="wrap">
+    ${sectionHead({
+      kicker: 'Topics',
+      title: 'What we write about',
+      lead:
+        'Six clusters, each tied to a part of the workflow. Every one links through to the product page that answers the same question in practice.',
+    })}
+    <div class="cluster-grid reveal-stagger">
+      ${topicClusters
+        .map((c) => {
+          const items = c.slugs.map((sl) => bySlug.get(sl)).filter(Boolean);
+          return `
+      <article class="cluster" id="topic-${c.id}">
+        <h3>${esc(c.label)}</h3>
+        <p class="cluster-blurb">${esc(c.blurb)}</p>
+        ${
+          items.length
+            ? `<ul class="cluster-list">${items
+                .map(
+                  (post) =>
+                    `<li><a href="${post.path}">${esc(post.title)}</a><span>${post.readMins} min</span></li>`
+                )
+                .join('')}</ul>`
+            : ''
+        }
+        <a class="cluster-pillar" href="${c.pillar.href}">${esc(c.pillar.label)} ${icon('arrow')}</a>
+      </article>`;
+        })
+        .join('')}
+    </div>
+  </div>
+</section>`;
+};
+
 /* ==========================================================================
    /resources — filterable hub
    ========================================================================== */
@@ -58,11 +96,16 @@ export function resourcesHub() {
     <div class="page-hero-inner">
       ${breadcrumbs(crumbs)}
       ${eyebrow('Resources')}
-      <h1>Guides, case studies and comparisons — with the numbers in them.</h1>
+      <h1>Guides on content marketing, social media automation and SEO.</h1>
       <p class="lead">
-        ${posts.length} in-depth pieces on getting content published consistently: real workflows, real costs,
-        real before-and-after figures, and the honest version of what AI writing does and does not do.
+        ${posts.length} in-depth pieces on getting content published consistently — content calendars,
+        social media scheduling, keyword research and tool comparisons. Real workflows, real costs, real
+        before-and-after figures, and the honest version of what AI writing does and does not do.
       </p>
+      <div class="cta-row" style="margin-top:24px">
+        <a class="btn btn-secondary" href="#topics">Browse by topic ${icon('arrow')}</a>
+        <a class="btn btn-ghost" href="/feed.xml">RSS feed</a>
+      </div>
     </div>
   </div>
 </section>
@@ -110,14 +153,16 @@ export function resourcesHub() {
   </div>
 </section>
 
+${clusterBand()}
+
 ${finalCta()}`;
 
   return page({
     path: '/resources',
     ogImage: '/og/resources.png',
-    title: 'Resources — guides, case studies and comparisons | ContentLineup',
+    title: 'Resources — content marketing, social automation & SEO guides',
     description:
-      'Guides on content scheduling, a case study with six months of numbers, honest tool comparisons, and playbooks for real estate and local business.',
+      'Guides on content calendars, social media automation, keyword research and blog optimisation, plus a case study with six months of real numbers.',
     body,
     schema: [
       breadcrumbSchema(crumbs, crumbs[crumbs.length - 1].href),

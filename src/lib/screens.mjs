@@ -13,7 +13,9 @@ const H = 780;
 const SIDEBAR = 196;
 const TOPBAR = 56;
 
-const C = {
+// Exported so src/lib/art.mjs draws from the same palette — two sets of
+// hand-copied hex values would drift apart on the first brand tweak.
+export const C = {
   ink: '#0a0a0a',
   paper: '#fafaf7',
   white: '#ffffff',
@@ -35,9 +37,9 @@ const C = {
   greenSoft: '#e9f5ec',
 };
 
-const SANS = "Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
-const SERIF = "Fraunces, Georgia, 'Times New Roman', serif";
-const MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+export const SANS = "Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+export const SERIF = "Fraunces, Georgia, 'Times New Roman', serif";
+export const MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 const esc = (s = '') =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -58,6 +60,13 @@ const line = (x1, y1, x2, y2, stroke = C.ruleSoft) =>
   `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="1"/>`;
 
 /** Coloured status pill. */
+/**
+ * Status pill — the single most-repeated component on the site, and the one
+ * that has to be identical between the SVG app screens and the HTML lists on
+ * the marketing pages. Both are now: coloured dot, uppercase mono label,
+ * fully-rounded soft-tinted background. The CSS twin lives at `.state` in
+ * styles.css; the colour map here mirrors --*-soft / --* exactly.
+ */
 const pill = (x, y, label, tone) => {
   const map = {
     draft: [C.cream, C.muted],
@@ -68,10 +77,13 @@ const pill = (x, y, label, tone) => {
     idea: [C.accentSoft, C.accentStrong],
   };
   const [bg, fg] = map[tone] || map.draft;
-  const w = label.length * 6.1 + 18;
+  const text = String(label).toUpperCase();
+  // 5.05px per uppercase mono char at 9.5px, + dot + padding.
+  const w = text.length * 5.35 + 30;
   return (
     rect(x, y, w, 20, { r: 10, fill: bg }) +
-    t(x + 9, y + 14, label, { size: 10.5, weight: 600, fill: fg, mono: tone !== 'idea' })
+    `<circle cx="${x + 11}" cy="${y + 10}" r="2.5" fill="${fg}"/>` +
+    t(x + 18, y + 13.6, text, { size: 9.5, weight: 700, fill: fg, mono: true, spacing: 0.5 })
   );
 };
 
@@ -81,7 +93,7 @@ const avatar = (x, y, initials, tone = C.cream, fg = C.muted, r = 11) =>
   t(x + r, y + r + 3.6, initials, { size: 9.5, weight: 700, fill: fg, anchor: 'middle' });
 
 /** Simple stroke glyph set for the sidebar. */
-const GLYPH = {
+export const GLYPH = {
   plans: '<path d="M3 3.5h11M3 8h11M3 12.5h7"/>',
   ideas: '<path d="M8.5 2.5a4.5 4.5 0 0 0-2.6 8.2v1.6h5.2v-1.6A4.5 4.5 0 0 0 8.5 2.5Z"/><path d="M6.6 14.4h3.8"/>',
   calendar: '<rect x="2.5" y="3.5" width="12" height="11" rx="2"/><path d="M2.5 7h12M6 2v3m5-3v3"/>',
@@ -91,22 +103,44 @@ const GLYPH = {
     '<circle cx="12.6" cy="4.2" r="1.9"/><circle cx="4.4" cy="8.5" r="1.9"/><circle cx="12.6" cy="12.8" r="1.9"/><path d="m6.1 7.6 4.8-2.5m0 6.5L6.1 9.2"/>',
   library: '<path d="M3 3h3.6v11H3zM7.8 3h3.6v11H7.8z"/><path d="m12.6 3.6 2.4.6-2.2 10.2"/>',
   strategy: '<path d="M2.5 14V2.5M2.5 14H15"/><path d="M5.5 11V8m3 3V5m3 6V7"/>',
+  campaigns: '<path d="M3 6.5v4h2.5l6 3.2V3.3l-6 3.2Z"/><path d="M13.5 6.6a2.6 2.6 0 0 1 0 3.8"/>',
+  publishing: '<path d="M8.5 2.4v8.2m0-8.2L5.6 5.3m2.9-2.9 2.9 2.9"/><path d="M2.6 10.4v3.2h11.8v-3.2"/>',
+  accounts: '<circle cx="6" cy="6.4" r="2.5"/><path d="M1.8 14a4.3 4.3 0 0 1 8.4 0"/><path d="M11.4 4.2a2.5 2.5 0 0 1 0 4.5m.8 1.7A4.3 4.3 0 0 1 15.2 14"/>',
+  editor: '<path d="M11.6 2.3a1.7 1.7 0 0 1 2.4 2.4L6 12.7 2.8 13.6l.9-3.2Z"/><path d="m10.2 3.7 2.4 2.4"/>',
   settings: '<circle cx="8.5" cy="8.5" r="2.6"/><path d="M8.5 1.6v2m0 9.8v2M15.4 8.5h-2m-9.8 0h-2M13.4 3.6 12 5m-7 7-1.4 1.4m9.8 0L12 12M5 5 3.6 3.6"/>',
 };
 
-const NAV = [
+export const NAV = [
   ['plans', 'Plans'],
   ['ideas', 'Ideas'],
+  ['campaigns', 'Campaigns'],
   ['calendar', 'Calendar'],
-  ['list', 'List'],
+  ['list', 'Content'],
   ['approvals', 'Approvals'],
   ['social', 'Social'],
+  ['publishing', 'Publishing'],
   ['library', 'Library'],
   ['strategy', 'Strategy'],
   ['settings', 'Settings'],
 ];
 
-function sidebar(active) {
+// Screens that are a detail view rather than a top-level nav item still light
+// up the section of the sidebar they belong to.
+const NAV_ALIAS = { editor: 'list', accounts: 'plans' };
+
+/**
+ * The workspace shown in the sidebar switcher. Screens pass a different one so
+ * the site never looks like a product with a single customer in it.
+ */
+const WS = {
+  northgate: { initials: 'NA', name: 'Northgate Air', sub: 'HVAC · 9 people', user: ['IM', 'Iman Marsh', 'Owner'] },
+  bloom: { initials: 'BS', name: 'Bloom Studio', sub: 'Florist · 4 people', user: ['PN', 'Priya Nandra', 'Owner'] },
+  harbor: { initials: 'HD', name: 'Harbor Dental', sub: 'Practice · 12 people', user: ['AR', 'Alia Rahim', 'Principal'] },
+  lumen: { initials: 'LA', name: 'Lumen Analytics', sub: 'B2B SaaS · 30 people', user: ['MD', 'Marco Deniz', 'Head of Marketing'] },
+  meridian: { initials: 'MC', name: 'All accounts', sub: 'Meridian Collective', user: ['SK', 'Sana Kaur', 'Account director'] },
+};
+
+function sidebar(active, ws = WS.northgate) {
   let s = rect(0, 0, SIDEBAR, H, { r: 0, fill: C.white });
   s += line(SIDEBAR, 0, SIDEBAR, H, C.rule);
 
@@ -123,23 +157,24 @@ function sidebar(active) {
 
   // workspace switcher
   s += rect(16, 60, SIDEBAR - 32, 42, { r: 8, fill: C.paper, stroke: C.rule });
-  s += avatar(24, 71, 'NA', C.accentSoft, C.accentStrong, 10);
-  s += t(50, 78, 'Northgate Air', { size: 11, weight: 600 });
-  s += t(50, 91, 'Managed key · Pro', { size: 9.5, fill: C.faint, mono: true });
+  s += avatar(24, 71, ws.initials, C.accentSoft, C.accentStrong, 10);
+  s += t(50, 78, ws.name, { size: 11, weight: 600 });
+  s += t(50, 91, ws.sub, { size: 9.5, fill: C.faint, mono: true });
   s += `<path d="M${SIDEBAR - 30} 78 l4 4 4-4" stroke="${C.faint}" stroke-width="1.4" fill="none" stroke-linecap="round"/>`;
 
   s += t(20, 130, 'WORKSPACE', { size: 9, weight: 700, fill: C.faint, spacing: 0.8 });
 
+  const activeNav = NAV_ALIAS[active] || active;
   let y = 144;
   for (const [id, label] of NAV) {
-    const on = id === active;
+    const on = id === activeNav;
     if (on) s += rect(10, y, SIDEBAR - 20, 34, { r: 8, fill: C.accentSoft });
     if (on) s += rect(10, y + 8, 3, 18, { r: 2, fill: C.accent });
     s += `<g transform="translate(24 ${y + 9})" stroke="${on ? C.accent : C.subtle}" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round">${
       GLYPH[id]
     }</g>`;
     s += t(50, y + 22, label, { size: 12.5, weight: on ? 600 : 450, fill: on ? C.accentStrong : C.muted });
-    y += 38;
+    y += 34;
   }
 
   // queue health card
@@ -150,9 +185,9 @@ function sidebar(active) {
   s += rect(26, H - 68, SIDEBAR - 52, 5, { r: 3, fill: C.cream });
   s += rect(26, H - 68, (SIDEBAR - 52) * 0.72, 5, { r: 3, fill: C.sched });
 
-  s += avatar(16, H - 38, 'IM', C.cream, C.muted, 12);
-  s += t(46, H - 22, 'Iman Marsh', { size: 11, weight: 600 });
-  s += t(46, H - 10, 'Owner', { size: 9.5, fill: C.faint });
+  s += avatar(16, H - 38, ws.user[0], C.cream, C.muted, 12);
+  s += t(46, H - 22, ws.user[1], { size: 11, weight: 600 });
+  s += t(46, H - 10, ws.user[2], { size: 9.5, fill: C.faint });
   return s;
 }
 
@@ -179,13 +214,13 @@ function topbar(title, subtitle, action) {
   return s;
 }
 
-const frame = (id, title, inner) =>
+const frame = (id, title, inner, ws) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(
     title
   )}" font-family="${SANS}">
 <title>${esc(title)}</title>
 <rect width="${W}" height="${H}" fill="${C.paper}"/>
-${sidebar(id)}
+${sidebar(id, ws)}
 ${inner}
 </svg>`;
 
@@ -403,11 +438,24 @@ const calendar = () => {
   s += rect(CX, y0, CW, 40, { r: 10, fill: C.white, stroke: C.rule });
   s += t(CX + 18, y0 + 25, 'September 2026', { size: 14, weight: 600, serif: true });
   s += t(CX + 160, y0 + 25, '‹    ›', { size: 13, fill: C.faint });
+  // The legend borrows the status pill's vocabulary — same dot, same uppercase
+  // mono label, same colours — so a state reads identically here, in the pills
+  // on the other screens, and in the HTML lists on the marketing pages.
   ['Draft', 'Scheduled', 'Published'].forEach((l, i) => {
     const lx = CX + CW - 340 + i * 112;
-    const tone = [C.cream, C.sched, C.green][i];
-    s += `<circle cx="${lx}" cy="${y0 + 20}" r="4.5" fill="${tone}"/>`;
-    s += t(lx + 11, y0 + 24, l, { size: 10.5, fill: C.subtle });
+    const [dot, fg] = [
+      [C.muted, C.muted],
+      [C.sched, C.sched],
+      [C.green, C.green],
+    ][i];
+    s += `<circle cx="${lx}" cy="${y0 + 20}" r="2.5" fill="${dot}"/>`;
+    s += t(lx + 9, y0 + 23.6, l.toUpperCase(), {
+      size: 9.5,
+      weight: 700,
+      fill: fg,
+      mono: true,
+      spacing: 0.5,
+    });
   });
 
   const gy = y0 + 52;
@@ -479,7 +527,7 @@ const calendar = () => {
 // LIST
 // ---------------------------------------------------------------------------
 const list = () => {
-  let s = topbar('List', 'All articles · 49 total · 11 scheduled', 'New article');
+  let s = topbar('Content', 'All articles · 49 total · 11 scheduled', 'New article');
 
   const y0 = TOPBAR + 24;
   const tabs = ['All  49', 'Draft  8', 'Scheduled  11', 'Published  30'];
@@ -1044,5 +1092,407 @@ const social = () => {
   return frame('social', 'ContentLineup — Social', s);
 };
 
-export const renderers = { plans, ideas, calendar, list, approvals, social, library, strategy, settings };
+// ---------------------------------------------------------------------------
+// CAMPAIGNS — content grouped by launch, season or quarter, across accounts
+// ---------------------------------------------------------------------------
+const campaigns = () => {
+  let s = topbar('Campaigns', 'Meridian Collective · 6 accounts · 9 active campaigns', 'New campaign');
+
+  s += stats(TOPBAR + 26, [
+    { label: 'Active campaigns', value: '9', sub: 'across 6 accounts' },
+    { label: 'In flight', value: '41', sub: 'ideas, drafts and posts' },
+    { label: 'Awaiting approval', value: '7', sub: '3 with clients', tone: C.amber },
+    { label: 'Published this quarter', value: '86', sub: 'blog + social', tone: C.green },
+  ]);
+
+  s += t(CX, TOPBAR + 138, 'Campaigns', { size: 14, weight: 600, serif: true });
+  s += t(CX + CW, TOPBAR + 138, 'Filter: All accounts  ·  Sort: Next publish', {
+    size: 10.5,
+    fill: C.faint,
+    anchor: 'end',
+  });
+
+  const rows = [
+    ['Summer cooling season', 'NA', 'Northgate Air', 'May – Aug', 0.78, '14 / 18', 'Sep 02 · 09:00', 'On track', 'published'],
+    ['Wedding season 2026', 'BS', 'Bloom Studio', 'Feb – Sep', 0.62, '13 / 21', 'Sep 03 · 08:00', 'On track', 'published'],
+    ['Q3 product launch', 'LA', 'Lumen Analytics', 'Jul – Sep', 0.41, '7 / 17', 'Sep 04 · 09:00', 'Needs drafts', 'review'],
+    ['Implants awareness', 'HD', 'Harbor Dental', 'Q3', 0.85, '11 / 13', 'Sep 05 · 09:00', 'On track', 'published'],
+    ['Autumn maintenance plans', 'NA', 'Northgate Air', 'Sep – Nov', 0.22, '4 / 18', 'Sep 09 · 09:00', 'Behind', 'accent'],
+    ['Always-on thought leadership', 'LA', 'Lumen Analytics', 'Rolling', 0.55, '22 / 40', 'Sep 10 · 08:00', 'On track', 'published'],
+  ];
+
+  const y0 = TOPBAR + 152;
+  s += rect(CX, y0, CW, 38 + rows.length * 62, { r: 10, fill: C.white, stroke: C.rule });
+  const colX = [CX + 18, CX + 330, CX + 470, CX + 700, CX + 862];
+  ['Campaign', 'Account', 'Progress', 'Next publish', 'Status'].forEach((c, i) => {
+    s += t(colX[i], y0 + 24, c.toUpperCase(), { size: 8.5, weight: 700, fill: C.faint, spacing: 0.7 });
+  });
+  s += line(CX, y0 + 38, CX + CW, y0 + 38, C.rule);
+
+  rows.forEach(([name, ini, account, window, pct, ratio, next, status, tone], i) => {
+    const ry = y0 + 38 + i * 62;
+    if (i) s += line(CX + 18, ry, CX + CW - 18, ry, C.ruleSoft);
+    if (i === 0) s += rect(CX + 1, ry + 1, CW - 2, 60, { r: 0, fill: C.accentSoft, opacity: 0.45 });
+    s += t(colX[0], ry + 27, name, { size: 12.5, weight: 550 });
+    s += t(colX[0], ry + 43, window, { size: 9.5, mono: true, fill: C.faint });
+    s += avatar(colX[1], ry + 19, ini, i % 2 ? C.schedSoft : C.accentSoft, i % 2 ? C.sched : C.accentStrong, 11);
+    s += t(colX[1] + 30, ry + 31, account, { size: 11, fill: C.muted });
+    s += rect(colX[2], ry + 24, 190, 8, { r: 4, fill: C.cream });
+    s += rect(colX[2], ry + 24, 190 * pct, 8, { r: 4, fill: pct > 0.7 ? C.green : pct > 0.4 ? C.sched : C.amber });
+    s += t(colX[2], ry + 46, ratio + ' pieces done', { size: 9.5, mono: true, fill: C.faint });
+    s += t(colX[3], ry + 31, next, { size: 11, mono: true, fill: C.sched });
+    s += pill(colX[4], ry + 20, status, tone);
+  });
+
+  const fy = y0 + 38 + rows.length * 62 + 18;
+  const stagesRow = [
+    ['Ideas captured', '31', C.faint],
+    ['Drafting', '12', C.muted],
+    ['Awaiting approval', '7', C.amber],
+    ['Scheduled', '18', C.sched],
+    ['Published this quarter', '86', C.green],
+  ];
+  const sw = (CW - 4 * 14) / 5;
+  stagesRow.forEach(([label, value, tone], i) => {
+    const x = CX + i * (sw + 14);
+    s += rect(x, fy, sw, 70, { r: 10, fill: C.white, stroke: C.rule });
+    s += rect(x, fy, 3, 70, { r: 2, fill: tone });
+    s += t(x + 18, fy + 30, value, { size: 21, weight: 600, serif: true, fill: tone });
+    s += t(x + 18, fy + 50, label, { size: 10, fill: C.subtle });
+    if (i < 4) {
+      s += `<path d="M${x + sw + 3} ${fy + 35} h7 m0 0 -2.8 -2.8 m2.8 2.8 -2.8 2.8" stroke="${C.faint}" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }
+  });
+
+  return frame('campaigns', 'ContentLineup — Campaigns', s, WS.meridian);
+};
+
+// ---------------------------------------------------------------------------
+// ACCOUNTS — every brand and client in one view
+// ---------------------------------------------------------------------------
+const accounts = () => {
+  let s = topbar('Accounts', 'Meridian Collective · 5 brands · one login', 'Add account');
+
+  const items = [
+    ['NA', 'Northgate Air', 'HVAC · Phoenix, AZ', ['LinkedIn', 'Facebook', 'Instagram'], '6', '2', 'Sep 02 · 09:00', C.accentSoft, C.accentStrong],
+    ['BS', 'Bloom Studio', 'Florist · Portland, OR', ['Instagram', 'Facebook'], '5', '1', 'Sep 03 · 08:00', C.schedSoft, C.sched],
+    ['HD', 'Harbor Dental', 'Dental practice · Boston, MA', ['Facebook', 'LinkedIn'], '4', '0', 'Sep 05 · 09:00', C.greenSoft, C.green],
+    ['LA', 'Lumen Analytics', 'B2B SaaS · remote', ['LinkedIn'], '9', '3', 'Sep 04 · 09:00', C.cream, C.muted],
+    ['MC', 'Meridian house brand', 'Agency · own marketing', ['LinkedIn', 'Instagram'], '3', '1', 'Sep 11 · 10:00', C.amberSoft, C.amber],
+  ];
+
+  const y0 = TOPBAR + 26;
+  const cols = 3;
+  const cardW = (CW - 2 * 16) / cols;
+  const cardH = 290;
+
+  items.forEach((it, i) => {
+    const [ini, name, kind, chans, sched, waiting, next, bg, fg] = it;
+    const x = CX + (i % cols) * (cardW + 16);
+    const y = y0 + Math.floor(i / cols) * (cardH + 16);
+    s += rect(x, y, cardW, cardH, { r: 12, fill: C.white, stroke: C.rule });
+    s += avatar(x + 18, y + 18, ini, bg, fg, 17);
+    s += t(x + 62, y + 34, name, { size: 13.5, weight: 600, serif: true });
+    s += t(x + 62, y + 49, kind, { size: 10, fill: C.faint });
+    s += line(x + 18, y + 70, x + cardW - 18, y + 70, C.ruleSoft);
+
+    s += t(x + 18, y + 90, 'CHANNELS', { size: 8, weight: 700, fill: C.faint, spacing: 0.7 });
+    let chx = x + 18;
+    chans.forEach((c) => {
+      const w = c.length * 5.9 + 18;
+      s += rect(chx, y + 98, w, 20, { r: 10, fill: C.paper, stroke: C.rule });
+      s += t(chx + 9, y + 112, c, { size: 9.5, weight: 500, fill: C.subtle });
+      chx += w + 6;
+    });
+
+    s += t(x + 18, y + 142, sched, { size: 20, weight: 600, serif: true, fill: C.sched });
+    s += t(x + 18, y + 157, 'scheduled', { size: 9.5, fill: C.faint });
+    s += t(x + 108, y + 142, waiting, { size: 20, weight: 600, serif: true, fill: waiting === '0' ? C.faint : C.amber });
+    s += t(x + 108, y + 157, 'awaiting approval', { size: 9.5, fill: C.faint });
+
+    s += rect(x + 18, y + 172, cardW - 36, 28, { r: 7, fill: C.paper });
+    s += t(x + 30, y + 190, 'Next out  ' + next, { size: 10, mono: true, fill: C.sched });
+
+    s += t(x + 18, y + 220, 'NEXT UP', { size: 8, weight: 700, fill: C.faint, spacing: 0.7 });
+    const upcoming = [
+      [['Summer AC maintenance tips', 'Blog · Tue'], ['Filter checklist carousel', 'Instagram · Thu']],
+      [['Choosing a wedding florist', 'Blog · Wed'], ['Behind the arch', 'Instagram · Fri']],
+      [['Are implants worth it?', 'Blog · Mon'], ['Implant myths, answered', 'Facebook · Wed']],
+      [['Onboarding: 3 weeks to 3 days', 'Blog · Thu'], ['Launch announcement', 'LinkedIn · Mon']],
+      [['How we brief 12 clients', 'Blog · Fri'], ['Retainer margin post', 'LinkedIn · Tue']],
+    ][i];
+    upcoming.forEach(([title, when], k) => {
+      const uy = y + 232 + k * 24;
+      s += `<circle cx="${x + 22}" cy="${uy + 8}" r="3" fill="${k ? C.faint : C.sched}"/>`;
+      const short = title.length > 26 ? title.slice(0, 25) + '…' : title;
+      s += t(x + 32, uy + 11, short, { size: 10.5, fill: C.muted });
+      s += t(x + cardW - 18, uy + 11, when, { size: 9.5, mono: true, fill: C.faint, anchor: 'end' });
+    });
+  });
+
+  // cross-account week strip
+  const sy = y0 + 2 * (cardH + 16);
+  s += rect(CX + 2 * (cardW + 16), y0 + cardH + 16, cardW, cardH, { r: 12, fill: C.accentSoft });
+  s += t(CX + 2 * (cardW + 16) + 20, y0 + cardH + 48, 'This week, everywhere', {
+    size: 13.5,
+    weight: 600,
+    serif: true,
+    fill: C.accentStrong,
+  });
+  const week = [
+    ['Mon', '2 posts', 'Harbor Dental, Lumen'],
+    ['Tue', '3 posts', 'Northgate Air ×2, Bloom'],
+    ['Wed', '1 post', 'Bloom Studio'],
+    ['Thu', '3 posts', 'Lumen ×2, Northgate Air'],
+    ['Fri', '2 posts', 'Bloom Studio, Meridian'],
+    ['Sat', '1 post', 'Northgate Air'],
+  ];
+  week.forEach(([d, n, who], i) => {
+    const wy = y0 + cardH + 68 + i * 32;
+    s += t(CX + 2 * (cardW + 16) + 20, wy + 14, d, { size: 10.5, weight: 700, mono: true, fill: C.accentStrong });
+    s += t(CX + 2 * (cardW + 16) + 58, wy + 14, n, { size: 10.5, weight: 600, fill: C.accentStrong });
+    s += t(CX + 2 * (cardW + 16) + 116, wy + 14, who, { size: 10, fill: C.accentStrong, opacity: 0.8 });
+  });
+  s += t(CX + 2 * (cardW + 16) + 20, y0 + cardH + 200, 'Open the shared calendar →', {
+    size: 10.5,
+    weight: 600,
+    fill: C.accentStrong,
+  });
+
+  s += rect(CX, sy, CW, 44, { r: 10, fill: C.white, stroke: C.rule });
+  s += t(CX + 18, sy + 28, 'Accounts are isolated at the data layer — a member of one cannot read another.', {
+    size: 11,
+    fill: C.subtle,
+  });
+  s += t(CX + CW - 18, sy + 28, 'Unlimited accounts on every plan', {
+    size: 10.5,
+    weight: 600,
+    fill: C.sched,
+    anchor: 'end',
+  });
+
+  return frame('accounts', 'ContentLineup — Accounts', s, WS.meridian);
+};
+
+// ---------------------------------------------------------------------------
+// EDITOR — write it yourself, or ask the AI; revisions are a conversation
+// ---------------------------------------------------------------------------
+const editor = () => {
+  let s = topbar('Editor', 'Bloom Studio · Wedding season 2026 · draft', 'Save & schedule');
+
+  const y0 = TOPBAR + 22;
+  const docW = CW * 0.615;
+  const px = CX + docW + 16;
+  const pw = CW - docW - 16;
+
+  /* ---- mode toggle: AI or manual, and the AI is not compulsory ---- */
+  s += rect(CX, y0, docW, 40, { r: 10, fill: C.white, stroke: C.rule });
+  s += rect(CX + 8, y0 + 7, 132, 26, { r: 7, fill: C.accent });
+  s += t(CX + 74, y0 + 24, 'Generate with AI', { size: 11, weight: 600, fill: C.white, anchor: 'middle' });
+  s += t(CX + 216, y0 + 24, 'Write manually', { size: 11, weight: 500, fill: C.subtle, anchor: 'middle' });
+  s += t(CX + docW - 16, y0 + 24, 'Draft · autosaved 12s ago', { size: 10, mono: true, fill: C.faint, anchor: 'end' });
+
+  /* ---- the document ---- */
+  const dy0 = y0 + 52;
+  s += rect(CX, dy0, docW, H - dy0 - 26, { r: 10, fill: C.white, stroke: C.rule });
+  const dx = CX + 26;
+  const dw = docW - 52;
+
+  s += t(dx, dy0 + 36, 'How to Choose a Wedding Florist:', { size: 19, weight: 600, serif: true, spacing: -0.4 });
+  s += t(dx, dy0 + 60, '9 Questions to Ask First', { size: 19, weight: 600, serif: true, spacing: -0.4 });
+  s += t(dx, dy0 + 82, 'choosing a wedding florist  ·  1,480 words  ·  6 sections', {
+    size: 10,
+    mono: true,
+    fill: C.accentStrong,
+  });
+  s += line(CX, dy0 + 96, CX + docW, dy0 + 96, C.ruleSoft);
+
+  // the section currently being revised
+  s += rect(dx - 12, dy0 + 108, dw + 24, 96, { r: 8, fill: C.accentSoft, opacity: 0.55 });
+  s += rect(dx - 12, dy0 + 108, 3, 96, { r: 2, fill: C.accent });
+  s += t(dx, dy0 + 130, 'Introduction', { size: 10, weight: 700, mono: true, fill: C.accentStrong, spacing: 0.6 });
+  s += t(dx, dy0 + 152, 'Most couples book a florist before they know what to ask.', {
+    size: 12.5,
+    weight: 500,
+  });
+  s += t(dx, dy0 + 170, 'These nine questions decide whether the flowers survive the day —', { size: 12.5, fill: C.muted });
+  s += t(dx, dy0 + 188, 'and whether the quote you signed is the one you pay.', { size: 12.5, fill: C.muted });
+
+  // rest of the document, rendered as structure
+  let by = dy0 + 226;
+  const para = (widths) => {
+    for (const w of widths) {
+      s += rect(dx, by, dw * w, 7, { r: 4, fill: C.cream });
+      by += 14;
+    }
+    by += 10;
+  };
+  s += t(dx, by, 'H2   What does “full service” actually include?', { size: 12, weight: 600, fill: C.ink });
+  by += 20;
+  para([0.97, 0.93, 0.99, 0.55]);
+
+  // an inline image with its generated alt text
+  s += rect(dx, by, dw, 104, { r: 8, fill: C.peach });
+  s += `<path d="M${dx} ${by + 78} l${dw * 0.26} -30 l${dw * 0.2} 18 l${dw * 0.24} -26 l${dw * 0.3} 38 Z" fill="${C.ink}" opacity="0.12"/>`;
+  s += `<circle cx="${dx + dw - 46}" cy="${by + 30}" r="18" fill="${C.white}" opacity="0.55"/>`;
+  s += rect(dx + 10, by + 78, 172, 18, { r: 9, fill: C.white, opacity: 0.92 });
+  s += t(dx + 20, by + 91, 'alt text written · 1 of 4', { size: 9, mono: true, fill: C.muted });
+  by += 120;
+
+  s += t(dx, by, 'H2   Nine questions to ask at the first meeting', { size: 12, weight: 600, fill: C.ink });
+  by += 20;
+  para([0.95, 0.88]);
+
+  s += rect(dx, by, dw, 86, { r: 8, fill: C.paper, stroke: C.rule });
+  s += t(dx + 14, by + 22, 'FAQ BLOCK · 4 questions', { size: 9, weight: 700, mono: true, fill: C.faint, spacing: 0.6 });
+  ['H3  How far ahead should we book?', 'H3  What happens if a flower is out of season?'].forEach((q, k) => {
+    s += t(dx + 14, by + 44 + k * 20, q, { size: 10.5, weight: 550, fill: C.subtle });
+  });
+
+  /* ---- AI assist rail ---- */
+  s += rect(px, y0, pw, H - y0 - 26, { r: 10, fill: C.white, stroke: C.rule });
+  s += t(px + 20, y0 + 28, 'AI assist', { size: 13, weight: 600, serif: true });
+  s += t(px + 20, y0 + 45, 'Scoped to the selected section', { size: 10, fill: C.faint });
+  s += pill(px + pw - 96, y0 + 16, 'Optional', 'draft');
+  s += line(px, y0 + 60, px + pw, y0 + 60, C.ruleSoft);
+
+  s += t(px + 20, y0 + 84, 'SELECTED', { size: 8, weight: 700, fill: C.faint, spacing: 0.7 });
+  s += rect(px + 20, y0 + 92, pw - 40, 30, { r: 7, fill: C.accentSoft });
+  s += t(px + 32, y0 + 112, 'Introduction', { size: 11, weight: 600, fill: C.accentStrong });
+
+  s += t(px + 20, y0 + 150, 'ASK FOR A CHANGE', { size: 8, weight: 700, fill: C.faint, spacing: 0.7 });
+  const asks = ['Make the introduction shorter.', 'Open with the direct answer.', 'Add a comparison table.', 'Rewrite for a first-time buyer.'];
+  asks.forEach((a, i) => {
+    const ay = y0 + 160 + i * 34;
+    s += rect(px + 20, ay, pw - 40, 28, { r: 7, fill: i === 0 ? C.ink : C.paper, stroke: i === 0 ? 'none' : C.rule });
+    s += t(px + 32, ay + 18, a, { size: 10.5, weight: i === 0 ? 600 : 450, fill: i === 0 ? C.white : C.subtle });
+  });
+
+  s += rect(px + 20, y0 + 306, pw - 40, 34, { r: 7, fill: C.white, stroke: C.rule });
+  s += t(px + 32, y0 + 328, 'Or type an instruction…', { size: 10.5, fill: C.faint });
+
+  s += t(px + 20, y0 + 372, 'APPLIED', { size: 8, weight: 700, fill: C.faint, spacing: 0.7 });
+  const applied = [
+    ['Make the introduction shorter.', 'Introduction · just now'],
+    ['Add a supplier cost table.', 'Section 3 · 6 min ago'],
+    ['Use “stems” not “florals”.', 'Whole draft · 14 min ago'],
+  ];
+  applied.forEach(([txt, meta], i) => {
+    const ay = y0 + 384 + i * 50;
+    s += rect(px + 20, ay, pw - 40, 42, { r: 7, fill: C.paper, stroke: C.rule });
+    s += `<g transform="translate(${px + 32} ${ay + 13}) scale(0.62)" stroke="${C.green}" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="m2 8.5 4 4 8-9"/></g>`;
+    s += t(px + 52, ay + 18, txt, { size: 10.5, weight: 500, fill: C.muted });
+    s += t(px + 52, ay + 32, meta, { size: 9, mono: true, fill: C.faint });
+  });
+
+  s += line(px, H - 96, px + pw, H - 96, C.ruleSoft);
+  s += t(px + 20, H - 74, 'Every version is kept. Roll back any time.', { size: 10, fill: C.faint });
+  s += rect(px + 20, H - 64, pw - 40, 34, { r: 8, fill: C.accent });
+  s += t(px + pw / 2, H - 42, 'Send for approval', { size: 11.5, weight: 600, fill: C.white, anchor: 'middle' });
+
+  return frame('editor', 'ContentLineup — Editor', s, WS.bloom);
+};
+
+// ---------------------------------------------------------------------------
+// PUBLISHING — the log of what went out, where, and when
+// ---------------------------------------------------------------------------
+const publishing = () => {
+  let s = topbar('Publishing', 'Live log · all accounts · last 30 days', 'Export log');
+
+  s += stats(TOPBAR + 26, [
+    { label: 'Published, 30 days', value: '86', sub: 'blog + social', tone: C.green },
+    { label: 'Channels connected', value: '11', sub: 'across 5 accounts' },
+    { label: 'Needs attention', value: '1', sub: 'expired token', tone: C.accent },
+    { label: 'On time', value: '100%', sub: 'of scheduled slots', tone: C.sched, mono: true },
+  ]);
+
+  const y0 = TOPBAR + 138;
+  s += t(CX, y0, 'Publishing log', { size: 14, weight: 600, serif: true });
+  s += t(CX + CW, y0, 'Timezone: America/Phoenix  ·  newest first', {
+    size: 10.5,
+    mono: true,
+    fill: C.faint,
+    anchor: 'end',
+  });
+
+  const rows = [
+    ['2026-09-05 09:00', 'How often should you service an HVAC system?', 'Northgate Air', 'Blog', 'Published', 'published', 'northgateair.com/blog/hvac-service…'],
+    ['2026-09-05 09:00', 'How often should you service an HVAC…', 'Northgate Air', 'LinkedIn', 'Published', 'published', 'linkedin.com/company/northgate-air…'],
+    ['2026-09-05 09:00', 'How often should you service an HVAC…', 'Northgate Air', 'Facebook', 'Published', 'published', 'facebook.com/northgateair/posts…'],
+    ['2026-09-04 09:00', 'Onboarding: three weeks to three days', 'Lumen Analytics', 'LinkedIn', 'Published', 'published', 'linkedin.com/company/lumen…'],
+    ['2026-09-03 08:00', 'Seasonal stem guide — September', 'Bloom Studio', 'Instagram', 'Retry sent', 'review', 'token refreshed · retried 08:04'],
+    ['2026-09-02 09:00', 'Winter HVAC maintenance checklist', 'Northgate Air', 'Blog', 'Published', 'published', 'northgateair.com/blog/winter-check…'],
+    ['2026-09-01 10:00', 'Are dental implants worth it?', 'Harbor Dental', 'Facebook', 'Published', 'published', 'facebook.com/harbordental/posts…'],
+  ];
+
+  const ty = y0 + 16;
+  s += rect(CX, ty, CW, 38 + rows.length * 46, { r: 10, fill: C.white, stroke: C.rule });
+  const colX = [CX + 18, CX + 176, CX + 500, CX + 640, CX + 760, CX + 880];
+  ['Published at', 'Content', 'Account', 'Channel', 'Result', 'Where it landed'].forEach((c, i) => {
+    s += t(colX[i], ty + 24, c.toUpperCase(), { size: 8.5, weight: 700, fill: C.faint, spacing: 0.7 });
+  });
+  s += line(CX, ty + 38, CX + CW, ty + 38, C.rule);
+
+  rows.forEach(([when, title, account, channel, result, tone, url], i) => {
+    const ry = ty + 38 + i * 46;
+    if (i) s += line(CX + 18, ry, CX + CW - 18, ry, C.ruleSoft);
+    if (tone === 'review') s += rect(CX + 1, ry + 1, CW - 2, 44, { r: 0, fill: C.amberSoft, opacity: 0.55 });
+    s += t(colX[0], ry + 28, when, { size: 10.5, mono: true, fill: tone === 'review' ? C.amber : C.sched });
+    const short = title.length > 42 ? title.slice(0, 41) + '…' : title;
+    s += t(colX[1], ry + 28, short, { size: 11.5, weight: 550 });
+    s += t(colX[2], ry + 28, account, { size: 11, fill: C.muted });
+    s += t(colX[3], ry + 28, channel, { size: 11, mono: true, fill: C.subtle });
+    s += pill(colX[4], ry + 18, result, tone);
+    s += t(colX[5], ry + 28, url, { size: 10, mono: true, fill: tone === 'review' ? C.amber : C.accent });
+  });
+
+  const fy = ty + 38 + rows.length * 46 + 16;
+  s += rect(CX, fy, CW, 46, { r: 10, fill: C.schedSoft });
+  s += t(CX + 20, fy + 21, 'Coming soon: WordPress and Payload CMS publishing', {
+    size: 11.5,
+    weight: 600,
+    fill: C.sched,
+  });
+  s += t(CX + 20, fy + 36, 'Live today: LinkedIn, Facebook, Instagram, publishing webhooks and the REST API.', {
+    size: 10,
+    fill: C.sched,
+  });
+
+  const cy = fy + 60;
+  s += t(CX, cy, 'By channel, last 30 days', { size: 12.5, weight: 600 });
+  const chans = [
+    ['LinkedIn', 31, 0.86, C.sched],
+    ['Facebook', 24, 0.67, C.accent],
+    ['Instagram', 19, 0.53, C.amber],
+    ['Blog (export / API)', 12, 0.33, C.green],
+  ];
+  const bw = (CW - 3 * 14) / 4;
+  chans.forEach(([name, n, pct, tone], i) => {
+    const x = CX + i * (bw + 14);
+    s += rect(x, cy + 12, bw, 62, { r: 10, fill: C.white, stroke: C.rule });
+    s += t(x + 16, cy + 34, name, { size: 11, weight: 550 });
+    s += t(x + bw - 16, cy + 34, String(n), { size: 12, weight: 600, mono: true, fill: tone, anchor: 'end' });
+    s += rect(x + 16, cy + 46, bw - 32, 7, { r: 4, fill: C.cream });
+    s += rect(x + 16, cy + 46, (bw - 32) * pct, 7, { r: 4, fill: tone });
+    s += t(x + 16, cy + 66, 'posts published', { size: 9, fill: C.faint });
+  });
+
+  return frame('publishing', 'ContentLineup — Publishing log', s, WS.meridian);
+};
+
+export const renderers = {
+  ideas,
+  campaigns,
+  editor,
+  calendar,
+  approvals,
+  publishing,
+  accounts,
+  plans,
+  list,
+  social,
+  library,
+  strategy,
+  settings,
+};
 export const renderScreen = (id) => renderers[id]();

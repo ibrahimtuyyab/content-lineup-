@@ -48,6 +48,28 @@ export const SERVICE_KEY = clean(
 
 export const hasSupabase = !!(SUPABASE_URL && (ANON_KEY || SERVICE_KEY));
 
+// Neon / Vercel Postgres. Vercel injects several aliases for a connected Neon
+// store; any of them is the same database, so accept whichever is present.
+// The unpooled variant is preferred for schema work and bulk writes.
+export const NEON_URL = clean(
+  process.env.DATABASE_URL_UNPOOLED ||
+    process.env.POSTGRES_URL_NON_POOLING ||
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.NEON_DATABASE_URL
+);
+
+export const hasNeon = /^postgres(ql)?:\/\//.test(NEON_URL);
+
+/** Host only, for logging — never print the whole string, it contains the password. */
+export const neonHost = () => {
+  try {
+    return new URL(NEON_URL).hostname;
+  } catch {
+    return '(unset)';
+  }
+};
+
 /**
  * Pick a key for the job.
  * @param {'read'|'write'} mode

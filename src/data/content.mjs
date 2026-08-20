@@ -11,7 +11,7 @@
 // the module graph waits for the fetch before any renderer runs.
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
-import { hasSupabase, SUPABASE_URL } from '../../db/env.mjs';
+import { hasSupabase, SUPABASE_URL, hasNeon, neonHost } from '../../db/env.mjs';
 import { renderBody } from '../../db/render.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -38,7 +38,22 @@ const writeCache = (posts, categories) => {
 };
 
 async function load() {
-  // 1. Supabase
+  // 1. Neon — the production database once DATABASE_URL is set, which Vercel
+  //    injects automatically for a connected Neon store.
+  if (hasNeon) {
+    try {
+      const neon = await import('../../db/neon.mjs');
+      const [posts, cats] = await Promise.all([neon.livePosts(), neon.allCategories()]);
+      writeCache(posts, cats);
+      console.log(`Content: ${posts.length} posts from Neon (${neonHost()})`);
+      return { posts, cats };
+    } catch (err) {
+      console.warn(`\nNeon unavailable: ${err.message.split('\n')[0]}`);
+      // fall through to the sources below
+    }
+  }
+
+  // 2. Supabase
   if (hasSupabase) {
     try {
       const sb = await import('../../db/supabase.mjs');

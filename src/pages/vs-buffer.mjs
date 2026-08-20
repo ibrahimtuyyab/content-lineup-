@@ -44,7 +44,7 @@ export default function vsBufferPage() {
     },
     {
       q: 'Can Buffer publish blog posts?',
-      a: 'No. Buffer publishes to social media channels. It does not write long-form articles and does not publish to your website, so it cannot replace the article side of ContentLineup.',
+      a: 'No. Buffer publishes to social media channels. It does not write long-form articles and has no concept of a blog post, so it cannot replace the article side of ContentLineup. Worth being precise about our own side too: native WordPress and Payload CMS publishing is still in development, so today an approved article reaches your site through export, a webhook or the REST API.',
     },
     {
       q: 'Should I run both?',
@@ -52,13 +52,16 @@ export default function vsBufferPage() {
     },
     {
       q: 'Which is cheaper?',
-      a: 'They price on different axes, so it depends on shape. Buffer charges per connected channel, which climbs as you add networks and clients. ContentLineup is $0/month on your own AI key with no article cap, or $29/month managed, and the three social channels are included on every plan rather than priced per channel.',
+      a: 'They price on different axes, so it depends on shape. Buffer charges per connected channel, which climbs as you add networks and clients. ContentLineup is $0/month for the whole workflow with unlimited posts and brands — you supply your own AI key or write manually — or $29/month with AI writing included. The three social channels are on every plan rather than priced per channel.',
     },
   ];
 
   const rows = [
     ['Writes the long-form article', 'yes', 'Outline-first drafts from a one-line brief', 'no', 'You write the post; Buffer schedules it'],
-    ['Publishes articles to your site', 'yes', 'Per-article publish date and time', 'no', 'Social channels only'],
+    ['Gets the article onto your site', 'partial', 'Markdown/HTML export, webhooks and a REST API today; native WordPress and Payload CMS in development', 'no', 'Social channels only — no concept of a blog post'],
+    ['Content calendar', 'yes', 'Blog and social on one month grid, filtered by account or campaign', 'yes', 'Mature social calendar, social posts only'],
+    ['Ideas and campaigns', 'yes', 'Idea board promoted into briefs, grouped into campaigns', 'no', 'You arrive with the post already written'],
+    ['Multiple brands and clients', 'yes', 'Unlimited accounts on every plan, one login', 'yes', 'Supported, priced per connected channel'],
     ['LinkedIn', 'yes', 'Personal profile or company page', 'yes', 'Supported, with more post types than we offer'],
     ['Facebook', 'yes', 'Pages, link and image posts', 'yes', 'Supported, including Groups'],
     ['Instagram', 'yes', 'Business/Creator feed posts', 'yes', 'Supported, including Stories and Reels'],
@@ -69,7 +72,7 @@ export default function vsBufferPage() {
     ['Images matched with alt text', 'yes', 'Featured plus inline, matched per section', 'partial', 'You attach media yourself'],
     ['SEO meta, slug, keyword check', 'yes', 'Generated and length-checked per article', 'no', 'Not applicable to social posts'],
     ['Approval workflow', 'yes', 'Covers articles and social posts', 'yes', 'Available on higher tiers'],
-    ['Free tier', 'yes', '$0/mo forever on your own AI key, uncapped', 'yes', 'Free tier with channel and post limits'],
+    ['Free tier', 'yes', '$0/mo forever: unlimited posts, brands, calendar and approvals', 'yes', 'Free tier with channel and post limits'],
   ];
 
   const body = `
@@ -81,8 +84,9 @@ export default function vsBufferPage() {
       <h1>ContentLineup vs Buffer</h1>
       <p class="lead">
         These now overlap on three channels — LinkedIn, Facebook and Instagram — so this is a real
-        comparison rather than a polite one. The short version: Buffer is broader at social,
-        ContentLineup is the only one of the two that writes and publishes the article in the first place.
+        comparison rather than a polite one. The short version: Buffer is broader at social, and
+        ContentLineup is the only one of the two that takes an idea all the way to a finished article
+        with the social distribution attached.
       </p>
     </div>
   </div>

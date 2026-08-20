@@ -22,9 +22,15 @@
     "db:apply": "node db/apply-schema.mjs",
     "db:setup": "node db/apply-schema.mjs && node db/push.mjs && node build.mjs",
     "db:copy": "node db/copy-schema.mjs",
-    "servers": "powershell -ExecutionPolicy Bypass -File tools/servers.ps1"
+    "servers": "powershell -ExecutionPolicy Bypass -File tools/servers.ps1",
+    "neon:setup": "node db/neon-setup.mjs",
+    "neon:check": "node db/neon-check.mjs",
+    "fonts": "node tools/subset-fonts.mjs"
   },
   "engines": {
     "node": ">=22.5"
+  },
+  "devDependencies": {
+    "subset-font": "^2.5.0"
   }
 }

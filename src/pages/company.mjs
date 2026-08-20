@@ -12,6 +12,7 @@ import {
   breadcrumbSchema,
 } from '../lib/html.mjs';
 import { relatedLinks, shot } from '../lib/blocks.mjs';
+import { art } from '../lib/art.mjs';
 import { relatedFor } from '../data/links.mjs';
 import { site, cta, trustPoints, faqGroups, allFaqs } from '../data/site.mjs';
 
@@ -76,6 +77,9 @@ ${hero({
 <section class="sec">
   <div class="wrap">
     <h2 class="sr-only">How we handle your data</h2>
+    <div style="margin-bottom:44px">
+      ${art('key-handling')}
+    </div>
     <div class="trust-grid reveal-stagger">
       ${trustPoints
         .map(
@@ -212,6 +216,12 @@ ${hero({
   crumbs,
 })}
 
+<section class="sec-tight">
+  <div class="wrap">
+    ${art('workflow-spine')}
+  </div>
+</section>
+
 ${faqGroups
   .map(
     (g, i) => `
@@ -292,10 +302,22 @@ ${hero({
   </div>
 </section>
 
+<section class="sec sec-paper">
+  <div class="wrap">
+    ${sectionHead({
+      kicker: 'How we work',
+      title: 'Three rules that decide what ships.',
+      lead: 'They are the reason this site labels things Coming Soon instead of quietly shipping a demo of them.',
+    })}
+    ${art('how-we-work')}
+  </div>
+</section>
+
 ${finalCta()}`;
 
   return page({
     path: '/about',
+    ogImage: '/og/about.png',
     title: 'About ContentLineup — why we built it | Teczon Labs',
     description:
       'Why we built a publishing queue rather than another AI writer, why the bring-your-own-key plan stays free, and where the gaps are.',
@@ -352,6 +374,10 @@ ${hero({
       </article>
     </div>
 
+    <div style="margin-top:44px">
+      ${art('support-panel')}
+    </div>
+
     <div class="prose reveal" style="margin-top:48px">
       <h2>Before you email about pricing</h2>
       <p>The two most common questions have answers already: the bring-your-own-key plan is genuinely free forever with no article cap, and switching between the managed key and your own is a toggle in Settings that does not affect existing content. The rest is on the <a href="/pricing">pricing page</a>.</p>
@@ -367,6 +393,7 @@ ${finalCta()}`;
 
   return page({
     path: '/contact',
+    ogImage: '/og/contact.png',
     title: 'Contact ContentLineup — support, feedback and security',
     description:
       'Get in touch with the ContentLineup team about support, billing, feature requests, security disclosures, or agency and volume requirements.',
@@ -486,7 +513,7 @@ ${hero({
       }">${esc(site.email)}</a> if you believe it has been compromised.</p>
 
       <h2>3. Plans and billing</h2>
-      <p>Paid plans are billed monthly in advance and renew automatically until cancelled. Cancellation takes effect at the end of the current billing period; you keep access until then. Managed-key plans include a monthly article allowance which resets on your billing date and does not roll over. If you exceed it, generation pauses for the remainder of the period — scheduled and published content is unaffected.</p>
+      <p>Paid plans are billed monthly or yearly in advance, at your choice, and renew automatically on the same period until cancelled. Cancellation takes effect at the end of the current billing period; you keep access until then. Managed-key plans include a monthly article allowance which resets on your billing date and does not roll over. If you exceed it, generation pauses for the remainder of the period — scheduled and published content is unaffected.</p>
       <p>The bring-your-own-key plan is free. You are responsible for your own AI provider costs, and we have no visibility of or control over that bill.</p>
 
       <h2>4. Refunds</h2>

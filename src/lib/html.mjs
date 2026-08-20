@@ -1,5 +1,6 @@
 // Rendering primitives: escaping, layout shell, SEO head, JSON-LD, chrome, components.
-import { site, nav, footerNav, cta } from '../data/site.mjs';
+import { site, nav, footerNav, cta, analytics } from '../data/site.mjs';
+import { assets } from './assets.mjs';
 
 // --- escaping ---------------------------------------------------------------
 export const esc = (s = '') =>
@@ -42,6 +43,21 @@ const ICONS = {
   share:
     '<circle cx="17.5" cy="6" r="2.6"/><circle cx="6.5" cy="12" r="2.6"/><circle cx="17.5" cy="18" r="2.6"/><path d="m8.8 10.8 6.4-3.5m0 9.4-6.4-3.5"/>',
   globe: '<circle cx="12" cy="12" r="8.6"/><path d="M3.6 12h16.8M12 3.4c2.2 2.4 3.4 5.4 3.4 8.6S14.2 18.2 12 20.6c-2.2-2.4-3.4-5.4-3.4-8.6S9.8 5.8 12 3.4Z"/>',
+
+  // Engagement glyphs for the channel previews. Deliberately generic shapes —
+  // a heart is a heart — so a post mockup reads as the right platform through
+  // layout and icon vocabulary without reproducing anyone's logo or wordmark.
+  heart:
+    '<path d="M12 20.3s-7.4-4.6-7.4-9.6a4.2 4.2 0 0 1 7.4-2.7 4.2 4.2 0 0 1 7.4 2.7c0 5-7.4 9.6-7.4 9.6Z"/>',
+  bubble:
+    '<path d="M20.5 11.6c0 4.1-3.8 7.4-8.5 7.4a9.7 9.7 0 0 1-2.9-.44L4.5 20l1.2-3.4a7 7 0 0 1-2.2-5c0-4.1 3.8-7.4 8.5-7.4s8.5 3.3 8.5 7.4Z"/>',
+  send: '<path d="M21 3 10.5 13.5M21 3l-6.8 18-3.7-7.5L3 9.8Z"/>',
+  bookmark: '<path d="M6.4 3.6h11.2v17l-5.6-4-5.6 4Z"/>',
+  repost:
+    '<path d="M4.5 9.2V7.6a2.6 2.6 0 0 1 2.6-2.6h9.3M16.4 2.2 19.5 5l-3.1 2.8"/><path d="M19.5 14.8v1.6a2.6 2.6 0 0 1-2.6 2.6H7.6M7.6 21.8 4.5 19l3.1-2.8"/>',
+  thumb:
+    '<path d="M6.6 10.4h-2a1.4 1.4 0 0 0-1.4 1.4v6.6a1.4 1.4 0 0 0 1.4 1.4h2Z"/><path d="M6.6 10.4 10.4 3a2.4 2.4 0 0 1 2.4 2.4V9h5.3a2 2 0 0 1 2 2.4l-1.3 6.4a2 2 0 0 1-2 1.6H6.6Z"/>',
+  dots: '<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>',
 };
 
 export const icon = (name, cls = '') =>
@@ -106,24 +122,44 @@ export const softwareSchema = (plans) => ({
   url: site.origin,
   description: site.description,
   featureList: [
-    'AI article writer with outline-first structure',
-    'Auto-matched images with generated alt text',
-    'SEO meta title, description, slug and keyword checks',
-    'Per-post scheduling to the minute',
-    'Chat-style section revisions',
-    'Managed or bring-your-own OpenAI/Gemini API key',
+    'Content idea board with keyword tagging',
+    'Campaigns grouping content by launch, season or quarter',
+    'AI drafting with outline-first structure, or manual writing',
+    'Brand voice applied per account',
+    'Shared content calendar across blog and social channels',
+    'Approval workflow with client review links',
+    'Multiple brand and client accounts from one login',
+    'Automatic publishing to LinkedIn, Facebook and Instagram',
+    'Publishing log with timestamps and live URLs',
     'Markdown, HTML and spreadsheet export',
   ],
   publisher: { '@id': site.origin + '/#organization' },
-  offers: plans.map((p) => ({
-    '@type': 'Offer',
-    name: p.name,
-    price: p.numeric,
-    priceCurrency: 'USD',
-    url: abs('/pricing'),
-    availability: 'https://schema.org/InStock',
-    description: p.summary,
-  })),
+  // Both billing periods are listed: an annual price that only exists behind a
+  // JS toggle is invisible to the crawlers that read these offers.
+  offers: plans.flatMap((p) => [
+    {
+      '@type': 'Offer',
+      name: p.annual ? `${p.name} (monthly)` : p.name,
+      price: p.numeric,
+      priceCurrency: 'USD',
+      url: abs('/pricing'),
+      availability: 'https://schema.org/InStock',
+      description: p.summary,
+    },
+    ...(p.annual
+      ? [
+          {
+            '@type': 'Offer',
+            name: `${p.name} (annual)`,
+            price: p.annual.numeric,
+            priceCurrency: 'USD',
+            url: abs('/pricing'),
+            availability: 'https://schema.org/InStock',
+            description: `${p.summary} Billed yearly — ${p.annual.saving}.`,
+          },
+        ]
+      : []),
+  ]),
 });
 
 /**
@@ -175,6 +211,51 @@ export const breadcrumbSchema = (crumbs, path) => ({
   })),
 });
 
+// --- ambient background -----------------------------------------------------
+/**
+ * The drifting dots from the hero, reusable anywhere.
+ *
+ * Deliberately NOT applied to article bodies or long-form prose. An animated
+ * background behind text you are actually reading is both a readability problem
+ * and the single most recognisable "generated template" tell — so this lives on
+ * page heroes, dark bands and closing CTAs, where there is space for it and it
+ * makes the page feel like part of the same site.
+ *
+ * Offsets come from index trigonometry rather than Math.random(): build.mjs
+ * content-hashes the HTML for cache-busting, and random values would bust every
+ * cache on every build.
+ *
+ * @param {number} count how many dots — density per placement
+ * @param {string} cls   'ambient' variants dial opacity down from the hero
+ */
+export const ambientDots = (count = 12, cls = 'is-ambient') => {
+  const dots = Array.from({ length: count }, (_, i) => {
+    const x = ((i + 0.5) / count) * 96 + 2;
+    const sx = Math.round(Math.cos(i * 2.399) * 104);
+    const sy = Math.round(Math.sin(i * 1.703) * 118);
+    const r = (4 + (i % 5) * 0.6).toFixed(1);
+    // Stagger stays inside the keyframes' aligned hold so the line still forms.
+    const d = ((i % 12) * 0.16).toFixed(2);
+    return `<span style="--x:${x.toFixed(1)}%;--sx:${sx}px;--sy:${sy}px;--r:${r}px;--d:-${d}s"></span>`;
+  }).join('');
+  return `<div class="hero-dots ${cls}" aria-hidden="true">${dots}</div>`;
+};
+
+// --- analytics --------------------------------------------------------------
+/**
+ * Cookieless analytics + the queue stub that makes `plausible(...)` safe to call
+ * before the script has loaded. Both tags are `defer`, so neither blocks render,
+ * and nothing here sets a cookie — no consent banner required.
+ *
+ * The stub is what lets app.js fire CTA events on a click that also navigates
+ * away: the call is queued synchronously and flushed when the script arrives.
+ */
+const analyticsTag = () => {
+  if (!analytics.enabled || !analytics.domain) return '';
+  return `<script defer data-domain="${esc(analytics.domain)}" src="${esc(analytics.src)}"></script>
+<script>window.plausible=window.plausible||function(){(window.plausible.q=window.plausible.q||[]).push(arguments)}</script>`;
+};
+
 // --- chrome -----------------------------------------------------------------
 const header = (path) => `
 <a class="skip" href="#main">Skip to content</a>
@@ -194,8 +275,10 @@ const header = (path) => `
       </ul>
     </nav>
     <div class="head-cta">
-      <a class="btn btn-ghost" href="${cta.login.href}">${esc(cta.login.label)}</a>
-      <a class="btn btn-primary" href="${cta.primary.href}">${esc(cta.primary.label)} ${icon('arrow')}</a>
+      <a class="btn btn-ghost head-login" href="${cta.login.href}" data-cta="header-login">${esc(cta.login.label)}</a>
+      <a class="btn btn-primary head-start" href="${cta.primary.href}" data-cta="header">${esc(
+        cta.primary.label
+      )} ${icon('arrow')}</a>
     </div>
     <button class="nav-toggle" id="nav-toggle" aria-expanded="false" aria-controls="nav-mobile" aria-label="Open menu">
       <span></span><span></span><span></span>
@@ -212,8 +295,10 @@ const header = (path) => `
       </ul>
     </nav>
     <div class="nav-mobile-cta">
-      <a class="btn btn-ghost btn-block" href="${cta.login.href}">${esc(cta.login.label)}</a>
-      <a class="btn btn-primary btn-block" href="${cta.primary.href}">${esc(cta.primary.label)} ${icon('arrow')}</a>
+      <a class="btn btn-ghost btn-block" href="${cta.login.href}" data-cta="mobile-nav-login">${esc(cta.login.label)}</a>
+      <a class="btn btn-primary btn-block" href="${cta.primary.href}" data-cta="mobile-nav">${esc(
+        cta.primary.label
+      )} ${icon('arrow')}</a>
     </div>
   </div>
 </header>`;
@@ -225,8 +310,8 @@ const footer = () => `
       <div class="foot-brand">
         <a href="/" aria-label="ContentLineup home">${logoMark()}</a>
         <p>${esc(site.tagline)}</p>
-        <p class="foot-desc">AI-written, SEO-ready articles that publish themselves on the schedule you set. Managed key or your own — your content either way.</p>
-        <a class="btn btn-primary" href="${cta.primary.href}">${esc(cta.primary.label)} ${icon('arrow')}</a>
+        <p class="foot-desc">The content operating system for marketing teams: ideas, AI or manual drafting, a shared content calendar, approvals, and automatic publishing to your blog and social channels.</p>
+        <a class="btn btn-primary" href="${cta.primary.href}" data-cta="footer">${esc(cta.primary.label)} ${icon('arrow')}</a>
       </div>
       <div class="foot-links">
         ${footerNav
@@ -325,16 +410,25 @@ ${
 <link rel="alternate" type="application/rss+xml" title="${esc(site.name)} — Resources" href="/feed.xml">
 <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/fraunces-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="${assets.css}">
 <script type="application/ld+json">${jsonld({ '@context': 'https://schema.org', '@graph': graph })}</script>
-<script src="/app.js" defer></script>
+${analyticsTag()}
+<script src="${assets.js}" defer></script>
+<noscript><style>.reveal,.reveal-stagger>*{opacity:1!important;transform:none!important}</style></noscript>
 </head>
 <body class="${o.bodyClass || ''}">
+<div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
 ${header(o.path)}
 <main id="main">
 ${o.body}
 </main>
 ${footer()}
+<div class="sticky-cta" id="sticky-cta" hidden>
+  <div class="sticky-cta-inner">
+    <p><b>Every idea, lined up and published.</b><span>Free plan &middot; no card required</span></p>
+    <a class="btn btn-primary" href="${cta.primary.href}" data-cta="sticky-mobile">${esc(cta.primary.label)}</a>
+  </div>
+</div>
 </body>
 </html>`;
 }
@@ -352,13 +446,20 @@ export const sectionHead = ({ kicker, title, lead, align = '' }) => `
   ${lead ? `<p class="lead">${lead}</p>` : ''}
 </div>`;
 
-export const btn = (label, href, variant = 'primary', withArrow = false) =>
-  `<a class="btn btn-${variant}" href="${href}">${esc(label)}${withArrow ? ' ' + icon('arrow') : ''}</a>`;
+/**
+ * @param {string} [track] value for data-cta — the label this button reports to
+ *   analytics. Name it for where it sits on the page ("hero", "pricing-team"),
+ *   because the question it has to answer is which placement converts.
+ */
+export const btn = (label, href, variant = 'primary', withArrow = false, track = '') =>
+  `<a class="btn btn-${variant}" href="${href}"${track ? ` data-cta="${esc(track)}"` : ''}>${esc(label)}${
+    withArrow ? ' ' + icon('arrow') : ''
+  }</a>`;
 
-export const ctaRow = (extra = '') => `
+export const ctaRow = (extra = '', track = 'inline') => `
 <div class="cta-row">
-  ${btn(cta.primary.label, cta.primary.href, 'primary', true)}
-  ${extra || btn(cta.secondary.label, cta.secondary.href, 'secondary')}
+  ${btn(cta.primary.label, cta.primary.href, 'primary', true, track)}
+  ${extra || btn(cta.secondary.label, cta.secondary.href, 'secondary', false, track + '-secondary')}
 </div>`;
 
 export const soonChip = () => `<span class="chip chip-soon">Coming soon</span>`;
@@ -378,21 +479,33 @@ export const breadcrumbs = (crumbs) => `
 
 /** Big closing CTA band used at the bottom of most pages. */
 export const finalCta = ({
-  title = 'Write it today. Publish it next Thursday at 9 AM.',
-  lead = 'Start free on your own OpenAI or Gemini key, or use our managed key and skip the setup entirely. Either way, your first article can be queued in the next ten minutes.',
-  note = 'Free plan, no card required · Cancel any time · Export everything, always',
-} = {}) => `
+  title = 'Your next 30 days of content, lined up this afternoon.',
+  lead = 'Capture the ideas you already have, draft them with AI or write them yourself, drop them on the calendar and approve the month in one sitting.',
+  note = 'Free plan, no card required &middot; Approve before anything goes live &middot; Export everything, always',
+  secondary = 'tour',
+} = {}) => {
+  const alt =
+    secondary === 'demo'
+      ? btn(cta.demo.label, cta.demo.href, 'outline-light', false, 'final-demo')
+      : secondary === 'none'
+        ? ''
+        : btn(cta.tour.label, '/how-it-works', 'outline-light', false, 'final-tour');
+  return `
 <section class="final-cta">
   <div class="wrap">
     <div class="final-cta-inner reveal">
       <div class="final-cta-glow" aria-hidden="true"></div>
       <h2>${title}</h2>
       <p class="lead">${lead}</p>
-      ${ctaRow()}
-      <p class="fine">${esc(note)}</p>
+      <div class="cta-row center">
+        ${btn(cta.primary.label, cta.primary.href, 'primary', true, 'final')}
+        ${alt}
+      </div>
+      <p class="fine">${note}</p>
     </div>
   </div>
 </section>`;
+};
 
 /** Renders an FAQ accordion + returns markup only; caller adds FAQPage schema. */
 export const faqAccordion = (items, idPrefix = 'faq') => `

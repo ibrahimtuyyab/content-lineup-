@@ -25,10 +25,12 @@ import {
   keyModesSection,
   publishingQueue,
 } from '../lib/blocks.mjs';
+import { art } from '../lib/art.mjs';
 import {
   site,
   cta,
   features,
+  stages,
   steps,
   plans,
   pricingFaqs,
@@ -39,6 +41,17 @@ import {
   workflowCompare,
 } from '../data/site.mjs';
 import { posts } from '../data/content.mjs';
+
+const FEATURE_ICON = {
+  idea: 'spark',
+  write: 'pen',
+  schedule: 'calendar',
+  approve: 'check',
+  social: 'share',
+  publish: 'globe',
+  ai: 'ai',
+  trust: 'shield',
+};
 
 const pageHero = ({ kicker, title, lead, crumbs, extra = '' }) => `
 <section class="page-hero">
@@ -61,56 +74,120 @@ export function featuresPage() {
     { label: 'Home', href: '/' },
     { label: 'Features', href: '/features' },
   ];
+
+  const shipped = features.filter((f) => !f.soon);
+  const soonList = features.filter((f) => f.soon);
+  const foundation = shipped.filter((f) => f.stage === 'foundation');
+
+  // Every feature is filed under the stage of the workflow it belongs to, so the
+  // page reads in the same order the product does.
+  const stageSection = (stage, i) => {
+    const items = shipped.filter((f) => f.stage === stage.id);
+    if (!items.length) return '';
+    const [lead, ...rest] = items;
+    return `
+<section class="sec ${i % 2 ? 'sec-paper' : ''}" id="stage-${stage.id}">
+  <div class="wrap">
+    ${sectionHead({
+      kicker: `Stage ${stage.n} — ${stage.verb}`,
+      title: stage.title,
+      lead: stage.short,
+    })}
+    ${shotSplit({
+      id: lead.screen,
+      anchor: lead.id,
+      kicker: lead.name,
+      title: lead.short,
+      body: lead.body,
+      bullets: lead.bullets,
+      level: 3,
+    })}
+    ${
+      rest.length
+        ? `<div class="grid g-2 reveal-stagger" style="margin-top:clamp(28px,4vw,44px)">
+      ${rest
+        .map(
+          (f) => `
+      <article class="card feat" id="${f.id}">
+        <span class="card-icon ${f.kind === 'schedule' ? 'sched' : f.kind === 'trust' ? 'trust' : ''}">${icon(
+            FEATURE_ICON[f.kind] || 'spark'
+          )}</span>
+        <h3>${esc(f.name)}</h3>
+        <p>${esc(f.body)}</p>
+        <ul class="check-list" style="margin-top:14px">
+          ${f.bullets.map((b) => `<li>${icon('check')}<span>${esc(b)}</span></li>`).join('')}
+        </ul>
+      </article>`
+        )
+        .join('')}
+    </div>`
+        : ''
+    }
+  </div>
+</section>`;
+  };
+
   const body = `
 ${pageHero({
   crumbs,
   kicker: 'Features',
-  title: 'Everything between “I should write about that” and “it is live.”',
+  title: 'Everything between “someone should write about that” and “it is live.”',
   lead:
-    'ContentLineup is one workflow, not a writing tool plus an image tool plus a scheduler. Below is every feature, what it actually does, and the screen it lives on — including the three still labelled Coming Soon.',
+    'ContentLineup is one workflow, not a writing tool plus a scheduler plus a spreadsheet. Below is every feature, filed under the stage of the workflow it belongs to — including the four still labelled Coming Soon.',
   extra: `<div class="cta-row" style="margin-top:26px">${btn(
     cta.primary.label,
     cta.primary.href,
     'primary',
     true
-  )}${btn('See pricing', '/pricing', 'secondary')}</div>`,
+  )}${btn('See pricing', '/pricing', 'secondary')}</div>
+  <ol class="stage-strip">${stages
+    .map((st) => `<li><a href="#stage-${st.id}"><b>${esc(st.n)}</b>${esc(st.verb)}</a></li>`)
+    .join('')}</ol>`,
 })}
 
-<section class="sec">
+${stages.map(stageSection).join('')}
+
+<section class="sec sec-cream" id="stage-foundation">
   <div class="wrap">
-    ${features
-      .filter((f) => !f.soon)
-      .map((f, i) =>
-        shotSplit({
-          id: f.screen,
-          kicker: `Feature ${String(i + 1).padStart(2, '0')}`,
-          title: f.name,
-          body: f.body,
-          bullets: f.bullets,
-          flip: i % 2 === 1,
-        })
-      )
-      .join('')}
+    ${sectionHead({
+      kicker: 'Underneath all of it',
+      title: 'The parts you should not have to think about.',
+      lead: 'How the AI gets paid for, and how you get your content back out.',
+    })}
+    <div class="grid g-2 reveal-stagger">
+      ${foundation
+        .map(
+          (f) => `
+      <article class="card feat" id="${f.id}">
+        <span class="card-icon ${f.kind === 'trust' ? 'trust' : ''}">${icon(FEATURE_ICON[f.kind] || 'spark')}</span>
+        <h3>${esc(f.name)}</h3>
+        <p>${esc(f.body)}</p>
+        <ul class="check-list" style="margin-top:14px">
+          ${f.bullets.map((b) => `<li>${icon('check')}<span>${esc(b)}</span></li>`).join('')}
+        </ul>
+      </article>`
+        )
+        .join('')}
+    </div>
   </div>
 </section>
 
-<section class="sec sec-cream">
+<section class="sec">
   <div class="wrap">
     ${sectionHead({
       kicker: 'Roadmap',
-      title: 'Three features we have not shipped yet.',
+      title: `${soonList.length} features we have not shipped yet.`,
       lead:
         'These are labelled Coming Soon everywhere on this site, and they stay labelled that way until they work. If one of them is the reason you are evaluating ContentLineup, that is worth knowing now rather than after signing up.',
     })}
-    <div class="grid g-3 reveal-stagger">
-      ${features
-        .filter((f) => f.soon)
+    <div class="grid g-2 reveal-stagger">
+      ${soonList
         .map(
           (f) => `
       <article class="card">
         <div class="card-head">
           <span class="card-icon ${f.kind === 'schedule' ? 'sched' : ''}">${icon(
-            f.kind === 'schedule' ? 'calendar' : 'pen'
+            FEATURE_ICON[f.kind] || 'spark'
           )}</span>
           ${soonChip()}
         </div>
@@ -130,13 +207,13 @@ ${pageHero({
   </div>
 </section>
 
-<section class="sec">
+<section class="sec sec-paper">
   <div class="wrap">
     ${sectionHead({
       kicker: 'The workspace',
       title: 'Every screen in the app.',
       lead:
-        'Plans, Ideas, Calendar, List, Approvals, Library, Strategy, and Settings. One sidebar, one queue, no context switching.',
+        'Ideas, Campaigns, Editor, Calendar, Approvals, Publishing, Accounts, Plans, Content, Social, Library, Strategy and Settings. One sidebar, one workflow, no context switching.',
     })}
     <div class="grid g-2 reveal-stagger">
       ${screenOrder.map((id) => shot(id)).join('')}
@@ -151,9 +228,9 @@ ${finalCta()}`;
   return page({
     path: '/features',
     ogImage: '/og/features.png',
-    title: 'Features — AI Writing, Images & Scheduling | ContentLineup',
+    title: 'Features — Calendar, Approvals & AI Writing | ContentLineup',
     description:
-      'Outline-first AI drafts, auto-matched images with alt text, generated SEO meta, per-post scheduling, chat-style revisions, and managed or BYO API keys.',
+      'Idea board, campaigns, AI or manual drafting, a shared content calendar, approvals with client review links, multi-brand accounts and automatic social publishing.',
     body,
     schema: [softwareSchema(plans), breadcrumbSchema(crumbs, '/features')],
   });
@@ -165,12 +242,12 @@ ${finalCta()}`;
 export function howItWorksPage() {
   const faqs = [
     {
-      q: 'How long does the whole process take for one article?',
-      a: 'About twelve minutes of your time: two minutes to brief the topic, roughly eight to review and revise the draft, and two to set the publish date. Generation, image matching, alt text, and the SEO fields happen in between without you.',
+      q: 'How long does the whole process take for one post?',
+      a: 'About twelve minutes of your time: two minutes to capture the idea and brief it, roughly eight to review and revise the draft, and two to set the publish date. Generation, image matching, alt text and the SEO fields happen in between without you.',
     },
     {
-      q: 'Do I have to review every article before it publishes?',
-      a: 'You do not have to, but we would recommend it — no AI tool produces a publish-ready expert article with zero human input. If a client or an editor needs to sign off, the approval gate makes review a required step rather than an optional one.',
+      q: 'Do I have to use the AI at all?',
+      a: 'No. Stage two works just as well as a blank editor — write it yourself, or paste in something a freelancer sent over. The calendar, the approvals and the publishing behave identically either way.',
     },
     {
       q: 'What happens if I am offline when a post is scheduled?',
@@ -181,9 +258,9 @@ export function howItWorksPage() {
   const body = `
 ${pageHero({
   kicker: 'How it works',
-  title: 'Four steps. Then it runs without you.',
+  title: 'Five stages. Then it runs without you.',
   lead:
-    'The whole workflow, screen by screen — from a one-line brief to an article that publishes itself on a Thursday morning while you are doing something else.',
+    'Idea → Generate → Calendar → Approve → Publish, screen by screen — from a line someone typed on a Monday to a post that goes live on Thursday morning while you are doing something else.',
   crumbs: [
     { label: 'Home', href: '/' },
     { label: 'How it works', href: '/how-it-works' },
@@ -256,11 +333,11 @@ ${pageHero({
     <div class="shot-split reveal">
       <div class="shot-split-text">
         ${eyebrow('The result', 'sched')}
-        <h3>A queue that publishes whether or not you show up</h3>
+        <h3>A calendar that publishes whether or not you show up</h3>
         <p class="lead">
-          Once articles are scheduled, the queue is the product. Each one carries its own timestamp,
-          moves Draft &rarr; Scheduled &rarr; Published on its own, and does it from our servers —
-          so a holiday, a busy quarter, or a laptop that never gets opened changes nothing.
+          Once content is approved and scheduled, the calendar is the product. Each piece carries its own
+          timestamp, moves Draft &rarr; In review &rarr; Scheduled &rarr; Published on its own, and does it
+          from our servers — so a holiday, a busy quarter, or a laptop that never gets opened changes nothing.
         </p>
         <div class="cta-row" style="margin-top:24px">
           ${btn(cta.primary.label, cta.primary.href, 'primary', true)}
@@ -284,17 +361,18 @@ ${finalCta()}`;
 
   return page({
     path: '/how-it-works',
-    title: 'How It Works — Brief to Scheduled Post | ContentLineup',
+    ogImage: '/og/how-it-works.png',
+    title: 'How It Works — Idea to Published Post | ContentLineup',
     description:
-      'Describe the topic, AI writes the structured article, images are matched with alt text, and the post publishes on the date and time you pick.',
+      'Capture the idea, draft it with AI or by hand, schedule it on the content calendar, get it approved, and let it publish itself to your blog and social channels.',
     body,
     schema: [
       {
         '@type': 'HowTo',
         '@id': site.origin + '/how-it-works#howto',
-        name: 'How to publish an SEO-ready article on a schedule with ContentLineup',
+        name: 'How to take a content idea from capture to published post with ContentLineup',
         description:
-          'Describe the topic, let AI write the structured article, get images matched automatically, and set the date it publishes and shares itself.',
+          'Capture the idea, draft it with AI or write it manually, place it on the content calendar, route it for approval, and let it publish itself to your channels.',
         totalTime: 'PT12M',
         supply: [{ '@type': 'HowToSupply', name: 'A topic and a target keyword' }],
         tool: [{ '@type': 'HowToTool', name: 'ContentLineup' }],
@@ -329,13 +407,19 @@ export function integrationsPage() {
   const body = `
 ${pageHero({
   kicker: 'Integrations',
-  title: 'Connects to the model you choose, and lets your content leave freely.',
-  lead: `${live} integrations live today and ${soon} in development. Two of them are AI providers you can bring your own key for; several of the rest exist specifically so nothing you make here is trapped.`,
+  title: 'Publishes where your audience already is.',
+  lead: `${live} integrations live today and ${soon} in development — social channels that publish on schedule, AI providers you can bring your own key for, and a set of clean exits so nothing you make here is ever trapped.`,
   crumbs: [
     { label: 'Home', href: '/' },
     { label: 'Integrations', href: '/integrations' },
   ],
 })}
+
+<section class="sec-tight">
+  <div class="wrap">
+    ${art('channel-flow')}
+  </div>
+</section>
 
 <section class="sec">
   <div class="wrap">
@@ -375,9 +459,10 @@ ${finalCta()}`;
 
   return page({
     path: '/integrations',
-    title: 'Integrations — OpenAI, Gemini & Exports | ContentLineup',
+    ogImage: '/og/integrations.png',
+    title: 'Integrations — LinkedIn, Facebook & Instagram | ContentLineup',
     description:
-      'Connect OpenAI or Gemini (or use our managed key), match images from Unsplash, and export to Markdown, HTML, spreadsheets, webhooks and a REST API.',
+      'Publish to LinkedIn, Facebook and Instagram on schedule. Connect OpenAI or Gemini, or use our managed key. WordPress and Payload CMS publishing in development.',
     body,
     schema: [
       breadcrumbSchema(
@@ -398,9 +483,9 @@ export function pricingPage() {
   const body = `
 ${pageHero({
   kicker: 'Pricing',
-  title: 'Free on your own key. $29 if you would rather not have one.',
+  title: 'Start free. Pay when it saves you a day a week.',
   lead:
-    'There is no feature gate between the free plan and the paid ones. What you are choosing is whose API key signs the request — and therefore who gets the bill for the tokens.',
+    'Every plan includes the whole workflow — ideas, campaigns, the content calendar, approvals, unlimited brands and automatic publishing. What changes between them is how much AI writing is included.',
   crumbs: [
     { label: 'Home', href: '/' },
     { label: 'Pricing', href: '/pricing' },
@@ -412,9 +497,12 @@ ${pageHero({
     <h2 class="sr-only">Plans and pricing</h2>
     ${planCards()}
     <p class="compare-note reveal" style="text-align:center;margin-inline:auto">
-      All plans include every feature. Paid plans are monthly, cancel in one click, and keep read and export
-      access to your library afterwards.
+      All plans include every feature. Paid plans are month to month or yearly &mdash; yearly is two months
+      free &mdash; cancel in one click either way, and keep read and export access to your library afterwards.
     </p>
+    <div style="margin-top:48px">
+      ${art('value-meter')}
+    </div>
   </div>
 </section>
 
@@ -436,29 +524,29 @@ ${pageHero({
         </thead>
         <tbody>
           <tr>
-            <th scope="row" class="dim">You have never used an AI API and do not want to start</th>
-            <td class="us"><strong>Managed key — $29</strong></td>
-            <td>Nothing to configure. Sign up and write.</td>
+            <th scope="row" class="dim">You want AI drafts without setting anything up</th>
+            <td class="us"><strong>Team — $29</strong></td>
+            <td>Generation included. Nothing to configure, nothing to paste.</td>
           </tr>
           <tr>
-            <th scope="row" class="dim">You already have an OpenAI or Gemini key</th>
-            <td class="us"><strong>Bring your own key — $0</strong></td>
-            <td>Every feature, no article cap, you pay your provider at cost.</td>
+            <th scope="row" class="dim">You write everything yourself and just need the workflow</th>
+            <td class="us"><strong>Free — $0</strong></td>
+            <td>Ideas, calendar, approvals and publishing, with no AI involved at all.</td>
           </tr>
           <tr>
-            <th scope="row" class="dim">You publish more than about 40 articles a month</th>
-            <td class="us"><strong>Bring your own key — $0</strong></td>
+            <th scope="row" class="dim">You publish more than about 40 posts a month</th>
+            <td class="us"><strong>Free — $0, on your own key</strong></td>
             <td>Per-token pricing beats a flat allowance at that volume.</td>
           </tr>
           <tr>
             <th scope="row" class="dim">You run content for several clients</th>
             <td class="us"><strong>Agency — $89</strong></td>
-            <td>Unlimited workspaces, 15 seats, per-client voice and approvals.</td>
+            <td>15 seats, per-client voice, approval chains and client review links.</td>
           </tr>
           <tr>
             <th scope="row" class="dim">You want to try it before deciding anything</th>
-            <td class="us"><strong>Bring your own key — $0</strong></td>
-            <td>Free forever, no card. Switch to managed later if you prefer.</td>
+            <td class="us"><strong>Free — $0</strong></td>
+            <td>Free forever, no card. Move up whenever it starts paying for itself.</td>
           </tr>
         </tbody>
       </table>
@@ -514,15 +602,15 @@ ${relatedLinks(relatedFor['pricing'].title, relatedFor['pricing'].links)}
 ${finalCta({
   title: 'Start on the free plan. Move up only if you need to.',
   lead:
-    'The bring-your-own-key plan is not a trial — it is free, uncapped, and has every feature. Upgrade only when not having a provider account is worth $29 to you.',
+    'The free plan is not a trial — it is free, uncapped on posts and brands, and includes the whole workflow. Upgrade when included AI writing and approvals are worth $29 to you.',
 })}`;
 
   return page({
     path: '/pricing',
     ogImage: '/og/pricing.png',
-    title: 'Pricing — free on your own API key, $29 managed | ContentLineup',
+    title: 'Pricing — free content calendar, $29 with AI | ContentLineup',
     description:
-      '$0/month forever on your own OpenAI or Gemini key with no article cap. $29/month managed, $89/month for agencies. Every feature on every plan.',
+      'Free forever: unlimited posts, brands, calendar, approvals and publishing. $29/month adds 40 AI-written posts. $89/month for agencies. No card to start.',
     body,
     schema: [
       softwareSchema(plans),
@@ -646,7 +734,7 @@ ${finalCta({
   return page({
     path: '/why-contentlineup',
     ogImage: '/og/why.png',
-    title: 'Why ContentLineup — vs generic AI writers and legacy schedulers',
+    title: 'Why ContentLineup — vs AI writers and schedulers',
     description:
       'An honest comparison against generic AI writing tools and legacy schedulers across eleven dimensions — including the rows where they win.',
     body,

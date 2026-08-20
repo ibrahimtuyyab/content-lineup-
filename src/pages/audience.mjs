@@ -14,11 +14,13 @@ import { relatedFor } from '../data/links.mjs';
 import { niches, cta } from '../data/site.mjs';
 
 const SCREEN_FOR = {
+  teams: 'campaigns',
   affiliate: 'library',
-  agencies: 'approvals',
+  agencies: 'accounts',
   local: 'plans',
   saas: 'strategy',
   owners: 'ideas',
+  agencies2: 'accounts',
   'real-estate': 'calendar',
   ecommerce: 'library',
   coaches: 'list',
@@ -38,9 +40,10 @@ export default function madeForPage() {
       ${eyebrow('Made for')}
       <h1>Built for the people who have to publish anyway.</h1>
       <p class="lead">
-        Eight kinds of business, eight versions of the same problem: the content is worth doing, and it is
-        always the thing that gets dropped. Find yours below — each one has the specific failure mode,
-        what changes, and an example of what ContentLineup would actually write for you.
+        Business owners, marketing teams and agencies first &mdash; then six more versions of the same
+        problem: the content is worth doing, and it is always the thing that gets dropped. Find yours
+        below. Each one has the specific failure mode, what changes, and an example of what
+        ContentLineup would actually write for you.
       </p>
       <div class="cta-row" style="margin-top:26px">
         ${btn(cta.primary.label, cta.primary.href, 'primary', true)}
@@ -133,7 +136,7 @@ ${finalCta()}`;
   return page({
     path: '/made-for',
     ogImage: '/og/made-for.png',
-    title: 'Made For — Agencies, Local, SaaS & More | ContentLineup',
+    title: 'Who It’s For — Owners, Teams & Agencies | ContentLineup',
     description:
       'Built for affiliate sites, agencies, local business, SaaS, real estate, e-commerce and coaches — the problem each one has, and what gets published.',
     body,

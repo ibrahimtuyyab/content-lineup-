@@ -3,8 +3,11 @@
 import { mkdirSync, writeFileSync, readFileSync, cpSync, rmSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 
-import { site, screenOrder, plans, socialPlatforms, comingSoon } from './src/data/site.mjs';
+import { setAssets } from './src/lib/assets.mjs';
+
+import { site, screenOrder, plans, channels, comingSoon, stages } from './src/data/site.mjs';
 import { renderScreen, SCREEN_EXT } from './src/lib/screens.mjs';
 import { posts } from './src/data/content.mjs';
 import home from './src/pages/home.mjs';
@@ -36,17 +39,17 @@ const DIST = join(ROOT, 'dist');
 const routes = [
   { path: '/', render: home, priority: '1.0', changefreq: 'weekly' },
   { path: '/features', render: featuresPage, priority: '0.9', changefreq: 'monthly', image: '/og/features.png' },
-  { path: '/how-it-works', render: howItWorksPage, priority: '0.9', changefreq: 'monthly' },
+  { path: '/how-it-works', render: howItWorksPage, priority: '0.9', changefreq: 'monthly', image: '/og/how-it-works.png' },
   { path: '/made-for', render: madeForPage, priority: '0.9', changefreq: 'monthly', image: '/og/made-for.png' },
-  { path: '/integrations', render: integrationsPage, priority: '0.8', changefreq: 'monthly' },
+  { path: '/integrations', render: integrationsPage, priority: '0.8', changefreq: 'monthly', image: '/og/integrations.png' },
   { path: '/pricing', render: pricingPage, priority: '0.9', changefreq: 'monthly', image: '/og/pricing.png' },
   { path: '/why-contentlineup', render: whyPage, priority: '0.8', changefreq: 'monthly', image: '/og/why.png' },
   { path: '/compare/contentlineup-vs-buffer', render: vsBufferPage, priority: '0.7', changefreq: 'monthly' },
   { path: '/resources', render: resourcesHub, priority: '0.8', changefreq: 'weekly', image: '/og/resources.png' },
   { path: '/security', render: securityPage, priority: '0.7', changefreq: 'yearly', image: '/og/security.png' },
   { path: '/faq', render: faqPage, priority: '0.7', changefreq: 'monthly' },
-  { path: '/about', render: aboutPage, priority: '0.6', changefreq: 'yearly' },
-  { path: '/contact', render: contactPage, priority: '0.6', changefreq: 'yearly' },
+  { path: '/about', render: aboutPage, priority: '0.6', changefreq: 'yearly', image: '/og/about.png' },
+  { path: '/contact', render: contactPage, priority: '0.6', changefreq: 'yearly', image: '/og/contact.png' },
   { path: '/privacy', render: privacyPage, priority: '0.3', changefreq: 'yearly', noSitemapDate: true },
   { path: '/terms', render: termsPage, priority: '0.3', changefreq: 'yearly', noSitemapDate: true },
   ...posts.map((p) => ({
@@ -112,10 +115,23 @@ for (const id of screenOrder) {
   screenBytes += write(`screens/${id}.${SCREEN_EXT}`, renderScreen(id));
 }
 
-// 3. css + js
-const cssRaw = readFileSync(join(ROOT, 'src', 'styles.css'), 'utf8');
-const cssSize = write('styles.css', minifyCss(cssRaw));
-const jsSize = write('app.js', readFileSync(join(ROOT, 'src', 'app.js'), 'utf8'));
+// 3. css + js — content-hashed, so the host can cache them for a year with
+//    `immutable` and a repeat visitor spends no round-trip revalidating them.
+//    A deploy that changes either file changes its URL, so there is no stale
+//    window to manage and no cache to purge.
+const fingerprint = (contents) => createHash('sha256').update(contents).digest('hex').slice(0, 10);
+
+const cssBody = minifyCss(readFileSync(join(ROOT, 'src', 'styles.css'), 'utf8'));
+const jsBody = readFileSync(join(ROOT, 'src', 'app.js'), 'utf8');
+
+const cssName = `styles.${fingerprint(cssBody)}.css`;
+const jsName = `app.${fingerprint(jsBody)}.js`;
+
+const cssSize = write(cssName, cssBody);
+const jsSize = write(jsName, jsBody);
+
+// Must happen before any page renders: the shell reads these when it builds <head>.
+setAssets({ css: '/' + cssName, js: '/' + jsName });
 
 // 4. pages
 let totalHtml = 0;
@@ -202,35 +218,52 @@ write(
 
 > ${site.description}
 
-${site.name} is an AI blog writing and publishing tool. You describe a topic, it
-writes a structured SEO-ready article, matches images to each section with alt
-text, publishes the post on a date and time you choose, and shares it to
-LinkedIn, Facebook and Instagram. Generation runs on our managed AI key or on
-your own OpenAI or Gemini key.
+${site.name} is a content operating system for marketing teams. One workflow takes
+a content idea all the way to a published post:
+
+  Idea → Generate → Calendar → Approve → Publish
+
+You capture ideas on a board, group them into campaigns, draft them with AI or write
+them yourself, place them on a shared content calendar, route them to a named
+reviewer (or a client, through a review link), and let them publish automatically to
+your connected channels. Every brand or client you run is its own account, with its
+own brand voice, channels, reviewers and calendar, under one login.
 
 ## Key facts
 
-- Pricing: ${plans.map((p) => `${p.name} ${p.price}${p.period}`).join('; ')}
-- Free plan is uncapped on your own API key; managed plans include an article allowance.
-- Social channels supported: ${socialPlatforms.map((p) => p.name).join(', ')} (three only).
-- Not supported: X, TikTok, YouTube, Pinterest, social inbox, social analytics.
-- Roadmap (not yet shipped): ${comingSoon.map((f) => f.name).join(', ')}.
+- Positioning: content operating system / content calendar + social media automation.
+  Not only an AI blog writer — the AI is optional and the workflow works without it.
+- Pricing: ${plans
+    .map((p) => `${p.name} ${p.price}${p.period}${p.annual ? ` (or ${p.annual.price}/year — ${p.annual.saving})` : ''}`)
+    .join('; ')}
+- The free plan includes the whole workflow with unlimited posts, campaigns and brands.
+  Paid plans add included AI generation and the approval workflow.
+- Channels live today: ${channels.filter((c) => c.status === 'live').map((c) => c.name).join(', ')}.
+- Channels in development (NOT shipped): ${channels.filter((c) => c.status === 'soon').map((c) => c.name).join(', ')}.
+- Blog publishing today works through Markdown/HTML export, publishing webhooks and a REST API.
+- Not supported at all: X, TikTok, YouTube, Pinterest, social inbox, social analytics.
+- Other roadmap items (not yet shipped): ${comingSoon.map((f) => f.name).join(', ')}.
+- AI generation runs on a managed key included in paid plans, or your own OpenAI or
+  Gemini key. Keys are encrypted at rest (AES-256) and never displayed after saving.
 - Content is exportable as Markdown, HTML and spreadsheet. No lock-in; cancelled
   accounts keep read and export access.
-- API keys are encrypted at rest (AES-256) and never displayed after saving.
+
+## The five stages
+
+${stages.map((st) => `${st.n}. ${st.verb} — ${st.title}: ${st.short}`).join('\n')}
 
 ## Product pages
 
 ${[
-  ['/features', 'Every feature in detail, with product screenshots'],
-  ['/how-it-works', 'The four-step workflow from brief to published post'],
-  ['/pricing', 'Plans, limits, and what bring-your-own-key actually costs'],
-  ['/integrations', 'AI providers, social channels, images, exports and API'],
-  ['/made-for', 'Eight audience types and the problem each one has'],
+  ['/features', 'Every feature, filed under the stage of the workflow it belongs to'],
+  ['/how-it-works', 'The five-stage workflow from idea to published post'],
+  ['/pricing', 'Plans, what is included, and what AI generation costs'],
+  ['/integrations', 'Social channels, AI providers, images, exports and the API'],
+  ['/made-for', 'Business owners, marketing teams, agencies and six more audiences'],
   ['/why-contentlineup', 'Comparison against AI writers and legacy schedulers'],
   ['/compare/contentlineup-vs-buffer', 'Head-to-head with Buffer, including where Buffer wins'],
   ['/security', 'How API keys and content are handled'],
-  ['/faq', 'Full FAQ'],
+  ['/faq', 'Full FAQ, starting with the questions people ask before signing up'],
 ]
   .map(([p, d]) => `- [${p}](${site.origin}${p}): ${d}`)
   .join('\n')}
@@ -288,8 +321,10 @@ for (const r of rendered.sort((a, b) => b.bytes - a.bytes)) {
   console.log(`  ${r.path.padEnd(58)} ${kb(r.bytes).padStart(9)}  (${kb(r.gzip)} gzip)`);
 }
 console.log(`\nAssets`);
-console.log(`  styles.css${' '.repeat(48)} ${kb(cssSize).padStart(9)}  (${kb(gzipSync(readFileSync(join(DIST, 'styles.css'))).length)} gzip)`);
-console.log(`  app.js${' '.repeat(52)} ${kb(jsSize).padStart(9)}  (${kb(gzipSync(readFileSync(join(DIST, 'app.js'))).length)} gzip)`);
+for (const [name, size] of [[cssName, cssSize], [jsName, jsSize]]) {
+  const gz = kb(gzipSync(readFileSync(join(DIST, name))).length);
+  console.log(`  ${name.padEnd(58)} ${kb(size).padStart(9)}  (${gz} gzip)`);
+}
 console.log(
   `\n${rendered.length + 1} HTML pages · ${allFiles.length} files · ${kb(totalBytes)} total in dist/\n`
 );

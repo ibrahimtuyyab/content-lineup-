@@ -35,12 +35,14 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
+# CSS and JS are content-hashed by build.mjs (styles.<hash>.css, app.<hash>.js),
+# so the URL changes whenever the bytes do and these can be cached for a year.
 [[headers]]
-  for = "/styles.css"
+  for = "/styles.*.css"
   [headers.values]
-    Cache-Control = "public, max-age=3600"
+    Cache-Control = "public, max-age=31536000, immutable"
 
 [[headers]]
-  for = "/app.js"
+  for = "/app.*.js"
   [headers.values]
-    Cache-Control = "public, max-age=3600"
+    Cache-Control = "public, max-age=31536000, immutable"

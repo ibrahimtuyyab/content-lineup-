@@ -228,15 +228,66 @@ export const breadcrumbSchema = (crumbs, path) => ({
  * @param {number} count how many dots — density per placement
  * @param {string} cls   'ambient' variants dial opacity down from the hero
  */
-export const ambientDots = (count = 12, cls = 'is-ambient') => {
-  const dots = Array.from({ length: count }, (_, i) => {
-    const x = ((i + 0.5) / count) * 96 + 2;
-    const sx = Math.round(Math.cos(i * 2.399) * 104);
-    const sy = Math.round(Math.sin(i * 1.703) * 118);
-    const r = (4 + (i % 5) * 0.6).toFixed(1);
-    // Stagger stays inside the keyframes' aligned hold so the line still forms.
-    const d = ((i % 12) * 0.16).toFixed(2);
-    return `<span style="--x:${x.toFixed(1)}%;--sx:${sx}px;--sy:${sy}px;--r:${r}px;--d:-${d}s"></span>`;
+/**
+ * The drifting background dots.
+ *
+ * Every dot carries its own start position, drift vector, size, duration,
+ * phase offset and peak opacity, so no two move together and the field never
+ * resolves into a pattern you can read.
+ *
+ * The values come from a seeded PRNG rather than Math.random(). build.mjs
+ * hashes the HTML for cache-busting, so true randomness would mint a new hash
+ * on every build for no reason — this way the same seed always produces the
+ * same markup, while the arrangement stays unpredictable to the eye, which is
+ * the part that actually matters. Give each page its own seed and each page
+ * gets its own field.
+ *
+ * @param {number} count how many dots
+ * @param {string} cls   placement variant — `is-hero` (homepage) or `is-page`
+ * @param {number} seed  any integer; same seed → same layout
+ */
+/** Stable per-page seed, so every route gets its own arrangement. */
+export const seedFromPath = (s = '/') => {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+};
+
+export const ambientDots = (count = 12, cls = 'is-ambient', seed = 1) => {
+  // mulberry32 — small, fast, and well distributed enough that the eye reads
+  // the result as scattered rather than gridded.
+  let t = Math.imul(seed || 1, 0x9e3779b9) >>> 0;
+  const rnd = () => {
+    t = (t + 0x6d2b79f5) >>> 0;
+    let x = t;
+    x = Math.imul(x ^ (x >>> 15), x | 1);
+    x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
+  const between = (lo, hi) => lo + rnd() * (hi - lo);
+
+  const dots = Array.from({ length: count }, () => {
+    const x = between(1, 99).toFixed(1);
+    const y = between(3, 95).toFixed(1);
+    // A free angle rather than separate x/y offsets, so the drift is not
+    // biased along either axis.
+    const angle = rnd() * Math.PI * 2;
+    const dist = between(28, 104);
+    const dx = Math.round(Math.cos(angle) * dist);
+    const dy = Math.round(Math.sin(angle) * dist * 0.7);
+    const r = between(4.5, 10.5).toFixed(1);
+    const dur = between(13, 32);
+    // Delay spans a whole cycle, so the dots are already spread across every
+    // phase on the first frame instead of starting together.
+    const delay = between(0, dur).toFixed(1);
+    const o = between(0.26, 0.62).toFixed(2);
+    return (
+      `<span style="--x:${x}%;--y:${y}%;--dx:${dx}px;--dy:${dy}px;` +
+      `--r:${r}px;--dur:${dur.toFixed(1)}s;--d:-${delay}s;--o:${o}"></span>`
+    );
   }).join('');
   return `<div class="hero-dots ${cls}" aria-hidden="true">${dots}</div>`;
 };
@@ -417,6 +468,7 @@ ${analyticsTag()}
 <noscript><style>.reveal,.reveal-stagger>*{opacity:1!important;transform:none!important}</style></noscript>
 </head>
 <body class="${o.bodyClass || ''}">
+${ambientDots(64, 'is-page-bg', seedFromPath(o.path || '/'))}
 <div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
 ${header(o.path)}
 <main id="main">

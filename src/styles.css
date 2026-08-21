@@ -208,14 +208,22 @@ section {
 .sec-tight {
   padding-block: clamp(48px, 6vw, 80px);
 }
+/* The tinted bands are a few percent translucent so the page-wide dot field
+   behind them reads through. These creams sit within ~3% of each other and of
+   the body, so at these alphas the sections look the same as they did while
+   still letting the layer show. The dark bands below stay fully opaque on
+   purpose — see .sec-ink. */
 .sec-paper {
-  background: var(--paper-2);
+  background: rgba(253, 253, 251, 0.82);
   border-block: 1px solid var(--rule);
 }
 .sec-cream {
-  background: linear-gradient(180deg, var(--paper-3), var(--paper));
+  background: linear-gradient(180deg, rgba(245, 244, 240, 0.86), rgba(250, 250, 247, 0.8));
   border-block: 1px solid var(--rule);
 }
+/* Opaque, deliberately. Terracotta dots over near-black read as noise rather
+   than atmosphere, and the dark bands earn their weight by being a rest between
+   the lighter stretches where the field is visible. */
 .sec-ink {
   background: var(--ink);
   color: #f5f4f0;
@@ -631,37 +639,40 @@ h3 {
   position: absolute;
   border-radius: 50%;
   filter: blur(70px);
-  opacity: 0.55;
+  opacity: 0.75;
 }
 .hero-bg::before {
-  width: 520px;
-  height: 520px;
+  width: 580px;
+  height: 580px;
   top: -230px;
   right: -130px;
-  background: radial-gradient(circle, rgba(244, 212, 186, 0.9), transparent 68%);
+  background: radial-gradient(circle, rgba(244, 212, 186, 1), transparent 70%);
 }
 .hero-bg::after {
-  width: 420px;
-  height: 420px;
+  width: 480px;
+  height: 480px;
   bottom: -220px;
   left: -140px;
-  background: radial-gradient(circle, rgba(15, 118, 110, 0.14), transparent 68%);
+  background: radial-gradient(circle, rgba(15, 118, 110, 0.22), transparent 70%);
 }
 /* Slow drift on the existing blush and teal blobs. Transform only — the blur
-   is already rasterised, so moving it costs nothing per frame. */
+   is already rasterised, so moving it costs nothing per frame.
+   `alternate` on a two-keyframe pair is a ping-pong: it eases out to the far
+   pose, then back, forever, and because the two ends are the only states there
+   is never a jump. Nothing here ever settles. */
 .hero-bg::before {
-  animation: hero-drift-a 34s var(--ease) infinite alternate;
+  animation: hero-drift-a 21s var(--ease) infinite alternate;
 }
 .hero-bg::after {
-  animation: hero-drift-b 42s var(--ease) infinite alternate;
+  animation: hero-drift-b 27s var(--ease) infinite alternate;
 }
 @keyframes hero-drift-a {
   from { transform: translate3d(0, 0, 0) scale(1); }
-  to   { transform: translate3d(-46px, 34px, 0) scale(1.08); }
+  to   { transform: translate3d(-92px, 66px, 0) scale(1.18); }
 }
 @keyframes hero-drift-b {
   from { transform: translate3d(0, 0, 0) scale(1); }
-  to   { transform: translate3d(52px, -28px, 0) scale(1.06); }
+  to   { transform: translate3d(98px, -56px, 0) scale(1.15); }
 }
 
 /* ---------- the dots that line up ----------
@@ -677,37 +688,79 @@ h3 {
      dots at full strength out there and knock them back behind the text, so
      the queue still reads as one line without ever sitting under a word at
      full opacity. */
-  mask-image: linear-gradient(90deg, #000 0 16%, rgba(0, 0, 0, 0.22) 33% 67%, #000 84% 100%);
-  -webkit-mask-image: linear-gradient(90deg, #000 0 16%, rgba(0, 0, 0, 0.22) 33% 67%, #000 84% 100%);
+  mask-image: linear-gradient(90deg, #000 0 16%, rgba(0, 0, 0, 0.42) 33% 67%, #000 84% 100%);
+  -webkit-mask-image: linear-gradient(90deg, #000 0 16%, rgba(0, 0, 0, 0.42) 33% 67%, #000 84% 100%);
 }
-/* Hero framing: only the text region, never the board below it. The board
-   starts at ~46% of the hero and is opaque, so dots reaching it are buried. */
-.hero-dots.is-hero {
-  inset: 0 0 auto 0;
-  height: 44%;
+/* ---------- the page-wide field ----------
+   One layer per page, a direct child of <body> so no ancestor stacking context
+   can trap it. It is `fixed` rather than stretched down the document: the field
+   is then present at every scroll position on a page of any length, for a
+   constant 64 nodes, instead of thousands of dots spread over a 12,000px page.
+
+   z-index -1 puts it under every piece of content — text, links and buttons all
+   paint above it and stay clickable — while still sitting above the canvas
+   background. pointer-events: none is belt and braces. */
+.hero-dots.is-page-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  /* Full bleed: the hero variants mask themselves away from their headline, but
+     this one is behind the page rather than inside a section, and the sections
+     above it do the softening instead. */
+  mask-image: none;
+  -webkit-mask-image: none;
+}
+.hero-dots.is-page-bg span {
+  /* Quieter than the hero field — it is behind body copy for the whole page,
+     not behind one headline. */
+  opacity: calc(var(--o, 0.34) * 0.62);
 }
 .hero-dots span {
   position: absolute;
   left: var(--x);
-  top: 38%;
+  top: var(--y);
   width: var(--r);
   height: var(--r);
   margin: calc(var(--r) / -2) 0 0 calc(var(--r) / -2);
   border-radius: 50%;
   background: var(--accent);
-  opacity: 0.2;
+  /* A soft halo is what turns a flat disc into a particle. Sized off --r so the
+     bigger dots glow proportionally more. */
+  box-shadow: 0 0 calc(var(--r) * 1.9) rgba(194, 65, 12, 0.45);
+  opacity: var(--o, 0.34);
   will-change: transform, opacity;
-  animation: hero-lineup 26s var(--ease) infinite;
+  /* Duration and phase are per-dot, set in the markup. That is what stops the
+     field moving as one body. */
+  animation: hero-wander var(--dur, 20s) ease-in-out infinite;
   animation-delay: var(--d);
 }
-/* Scatter → gather → hold → scatter. 0% and 100% are identical, so the loop
-   has no seam. The hold is what makes the queue legible rather than a
-   momentary crossing. */
-@keyframes hero-lineup {
-  0%   { transform: translate3d(var(--sx), var(--sy), 0); opacity: 0.1; }
-  36%  { transform: translate3d(0, 0, 0); opacity: 0.3; }
-  60%  { transform: translate3d(0, 0, 0); opacity: 0.3; }
-  100% { transform: translate3d(var(--sx), var(--sy), 0); opacity: 0.1; }
+/* A four-stop wander rather than a there-and-back: each leg turns a different
+   way off the dot's own --dx/--dy vector, so the path is a loop rather than a
+   line being retraced. 0% and 100% are identical, so it repeats seamlessly and
+   runs forever. Because every dot has a different vector, duration and phase,
+   nothing ever lines up and the field reads as drifting rather than cycling. */
+@keyframes hero-wander {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.82);
+    opacity: calc(var(--o, 0.34) * 0.45);
+  }
+  25% {
+    transform: translate3d(var(--dx), var(--dy), 0) scale(1.06);
+    opacity: var(--o, 0.34);
+  }
+  50% {
+    transform: translate3d(calc(var(--dx) * -0.35), calc(var(--dy) * 1.25), 0) scale(0.9);
+    opacity: calc(var(--o, 0.34) * 0.6);
+  }
+  75% {
+    transform: translate3d(calc(var(--dx) * -0.95), calc(var(--dy) * -0.55), 0) scale(1.02);
+    opacity: var(--o, 0.34);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(0.82);
+    opacity: calc(var(--o, 0.34) * 0.45);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -719,7 +772,7 @@ h3 {
   }
   .hero-dots span {
     transform: none;
-    opacity: 0.22;
+    opacity: var(--o, 0.34);
   }
 }
 
@@ -2429,7 +2482,7 @@ table.cmp .dim small {
   padding-top: clamp(44px, 5vw, 72px);
   padding-bottom: clamp(32px, 4vw, 52px);
   border-bottom: 1px solid var(--rule);
-  background: linear-gradient(180deg, var(--paper-2), var(--paper));
+  background: linear-gradient(180deg, rgba(253, 253, 251, 0.8), rgba(250, 250, 247, 0.72));
   overflow: hidden;
 }
 .page-hero::after {
@@ -2900,11 +2953,26 @@ table.cmp .dim small {
   font-weight: 550;
   line-height: 1.35;
   color: var(--ink);
+  /* Two lines are reserved whether the title needs them or not, so a short
+     title and a wrapping one produce the same card. */
+  min-height: 2.7em;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 .lu-card-foot {
   margin-top: 9px;
   padding-top: 8px;
   border-top: 1px dashed var(--rule);
+}
+/* Only Published cards show "Live", but every card reserves the row. Hiding it
+   with `display: none` is what made the Published column's cards taller than
+   the other four; visibility keeps the space and drops the ink. */
+.lu-card-foot[hidden] {
+  display: block;
+  visibility: hidden;
 }
 .lu-live {
   display: inline-flex;
@@ -2935,15 +3003,15 @@ table.cmp .dim small {
    animating into a later stage arrives already at its new depth. It resolves to
    0px below 861px, where the board is flat. */
 @keyframes lu-in {
-  from { opacity: 0; transform: translateZ(var(--cz, 0px)) translateX(-14px) scale(0.97); }
+  from { opacity: 0; transform: translateX(-14px) scale(0.97); }
   60%  { opacity: 1; }
-  to   { opacity: 1; transform: translateZ(var(--cz, 0px)); }
+  to   { opacity: 1; transform: none; }
 }
 @keyframes lu-out {
-  to { opacity: 0.25; transform: translateZ(var(--cz, 0px)) translateX(10px) scale(0.98); }
+  to { opacity: 0.25; transform: translateX(10px) scale(0.98); }
 }
 @keyframes lu-gone {
-  to { opacity: 0; transform: translateZ(var(--cz, 0px)) translateY(10px) scale(0.96); max-height: 0; margin-top: -9px; }
+  to { opacity: 0; transform: translateY(10px) scale(0.96); max-height: 0; margin-top: -9px; }
 }
 
 /* ---------- 02 publishes-to band ---------- */
@@ -3252,7 +3320,7 @@ table.cmp .dim small {
 /* ---------- 04 the tour ---------- */
 .tour-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.06fr) minmax(0, 0.94fr);
+  grid-template-columns: minmax(0, 1.24fr) minmax(0, 0.76fr);
   gap: clamp(28px, 4vw, 60px);
   align-items: start;
 }
@@ -3922,6 +3990,19 @@ table.cmp .dim small {
   display: block;
   width: 100%;
   height: 100%;
+}
+/* A real photo fills its frame the same way the illustration does. The master
+   in public/media/ is square, so the 1:1 Instagram frame uses it whole and the
+   1.91:1 link cards crop from the centre. Without object-fit the global
+   `img { height: auto }` wins and a photo overflows the link-card frame
+   instead of cropping into it. */
+.pv-photo picture,
+.pv-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
 }
 
 /* ---------- engagement row ---------- */
@@ -4757,11 +4838,10 @@ table.cmp .dim small {
 }
 
 @media (max-width: 700px) {
+  /* Match the artwork's own ratio so `contain` fills the frame exactly rather
+     than letterboxing the screen inside a shorter box. */
   .tour-shots {
-    aspect-ratio: 1240 / 660;
-  }
-  .tour-shot {
-    object-position: left top;
+    aspect-ratio: 1240 / 780;
   }
   .tour-rail {
     margin-top: 10px;
@@ -5362,16 +5442,17 @@ table.cmp .dim small {
 /* ==========================================================================
    The hero board in 3D
 
-   Two separate 3D contexts, deliberately not nested:
+   .hero-stage gives .lineup its perspective, so the whole board tilts as one
+   plane and steers a few degrees toward the cursor.
 
-   1. .hero-stage gives .lineup its perspective, so the whole board tilts.
-   2. .lineup-cols gives the cards their own local perspective, so they can sit
-      at real depth inside it.
-
-   They are kept apart because .lineup uses overflow: hidden to clip its rounded
-   corners, and per spec that forces transform-style back to flat — a card
-   translated on Z inside it would have no depth at all. Giving the column strip
-   its own perspective sidesteps that entirely.
+   What is deliberately NOT here is the per-stage depth ladder this block used
+   to carry — .lineup-cols had its own perspective and each column's cards sat
+   at a rising translateZ (idea 0px … published 70px). Depth through a
+   perspective is a scale: at translateZ(70px) through perspective(900px) the
+   Published cards rendered 8% bigger than the Ideas cards, which is exactly the
+   column-to-column size mismatch that had to be fixed. The board tilt does not
+   need it — rotating one flat plane keeps every column the same width and every
+   card the same size, because they all sit at the same depth.
    ========================================================================== */
 @media (min-width: 861px) {
   .hero-stage {
@@ -5389,30 +5470,6 @@ table.cmp .dim small {
   .lineup.is-tracking {
     /* While the cursor is driving it, follow closely rather than easing. */
     transition: transform 0.12s linear;
-  }
-
-  .lineup-cols {
-    perspective: 900px;
-    perspective-origin: 50% 40%;
-  }
-
-  /* Depth rises with the stage: an idea starts at the back and arrives at the
-     front once it is live. The movement the copy describes, in space. */
-  .lu-col[data-stage='idea'] .lu-card { --cz: 0px; }
-  .lu-col[data-stage='draft'] .lu-card { --cz: 16px; }
-  .lu-col[data-stage='calendar'] .lu-card { --cz: 32px; }
-  .lu-col[data-stage='approved'] .lu-card { --cz: 50px; }
-  .lu-col[data-stage='published'] .lu-card { --cz: 70px; }
-
-  .lu-card {
-    transform: translateZ(var(--cz, 0px));
-    transition: transform 0.55s var(--ease), box-shadow 0.55s var(--ease),
-      border-color 0.2s var(--ease);
-  }
-  /* Shadow tracks depth, or the lift reads as a scale-up rather than a rise. */
-  .lu-col[data-stage='approved'] .lu-card,
-  .lu-col[data-stage='published'] .lu-card {
-    box-shadow: 0 12px 26px -12px rgba(10, 10, 10, 0.18), 0 3px 8px -4px rgba(10, 10, 10, 0.1);
   }
 }
 
@@ -5567,80 +5624,7 @@ select {
   .link-card:hover { transform: none; }
 }
 
-/* ==========================================================================
-   Ambient dot field
 
-   The hero keeps its 26 gathering dots — that is the signature moment and it
-   earns real DOM. Everywhere else uses this instead: one tiled radial-gradient
-   on a pseudo-element, drifting on a transform.
-
-   Why not more spans: covering every section the same way meant ~17 containers
-   and several hundred absolutely-positioned elements per page. This is one
-   painted layer per section, composited on the GPU, with no extra nodes at all.
-   ========================================================================== */
-.sec,
-.sec-tight,
-.page-hero,
-.band,
-.final-cta,
-.hero {
-  position: relative;
-  isolation: isolate;
-}
-.sec::before,
-.sec-tight::before,
-.page-hero::before,
-.band::before,
-.final-cta::before {
-  content: '';
-  position: absolute;
-  /* inset: 0, not a negative inset. An oversized pseudo-element that drifts on
-     a transform pushes the document's scrollWidth out by its overflow on every
-     page — and it cannot be clipped with overflow:hidden here, because .sec.tour
-     contains the sticky screenshot panel and clipping would break it again.
-     Shifting the tile by exactly one cell is seamless and stays in bounds. */
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image: radial-gradient(circle, var(--accent) 1.6px, transparent 1.7px);
-  background-size: 74px 74px;
-  opacity: 0.055;
-  animation: dot-field 46s linear infinite;
-}
-/* Light dots on the ink-dark bands, where terracotta disappears. */
-.band::before,
-.final-cta::before,
-.sec-ink::before {
-  background-image: radial-gradient(circle, var(--peach) 1.6px, transparent 1.7px);
-  opacity: 0.1;
-}
-/* Quieter behind long-form reading, louder on the section breaks and CTAs. */
-.sec-cream::before {
-  opacity: 0.07;
-}
-.final-cta::before {
-  opacity: 0.13;
-  background-size: 62px 62px;
-}
-.prose::before,
-.article-body::before {
-  display: none;
-}
-
-@keyframes dot-field {
-  from { background-position: 0 0; }
-  to   { background-position: 74px -74px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sec::before,
-  .sec-tight::before,
-  .page-hero::before,
-  .band::before,
-  .final-cta::before {
-    animation: none;
-  }
-}
 
 /* ==========================================================================
    App chrome (HTML twin of the SVG screenshots)
@@ -5862,4 +5846,273 @@ select {
   .app-body {
     padding: 12px;
   }
+}
+
+/* ---------- item 2: the tour screen, whole ----------
+   This used to scale the shot 1.62x from a 68% 30% origin, which made the UI
+   text readable by cropping the sidebar and the bottom of the screen off the
+   frame. The screen is now shown complete instead: `contain` fits all
+   1240x780 of it inside the frame, and no transform sits on top.
+
+   That costs scale — the frame is ~664px wide, so the whole board lands at a
+   0.54 fit. The readability it used to buy with the zoom is now built into the
+   artwork: the type in editor() (src/lib/screens.mjs) is set ~1.4x larger and
+   heavier so it holds up at that size. Enlarge the type there, not the frame
+   here, or the cropping comes straight back. */
+.tour-shots {
+  overflow: hidden;
+}
+.tour-shot {
+  object-fit: contain;
+  object-position: center;
+}
+
+/* ---------- item 1 follow-on ----------
+   A fuller column must not gain a scrollbar; that shaved 6px off the cards in
+   Published while the column itself stayed the same width. */
+.lu-slot {
+  overflow: hidden;
+}
+
+/* ==========================================================================
+   Item 9 — light buttons pick up the accent on hover and press
+
+   Every clickable element with a white or light default now moves to
+   terracotta rather than to a grey. Text flips to white where the fill goes
+   solid, and the transition is the same 0.18s everywhere so the whole site
+   responds with one gesture.
+   ========================================================================== */
+.btn-secondary,
+.btn-ghost,
+.btn-light,
+.btn-outline-light,
+.tab-btn,
+.bill-opt,
+.lu-chip,
+.chip {
+  transition: background 0.18s var(--ease), border-color 0.18s var(--ease),
+    color 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+.btn-secondary:hover,
+.btn-ghost:hover,
+.btn-light:hover,
+.tab-btn:hover,
+.bill-opt:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn-secondary:hover .ico,
+.btn-ghost:hover .ico,
+.btn-light:hover .ico,
+.tab-btn:hover .ico {
+  color: #fff;
+}
+.btn-secondary:active,
+.btn-ghost:active,
+.btn-light:active,
+.tab-btn:active,
+.bill-opt:active {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #fff;
+}
+/* An already-selected tab or toggle keeps its ink fill — hovering it should
+   deepen, not switch it to a third colour. */
+.tab-btn[aria-selected='true']:hover,
+.bill-opt.is-on:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #fff;
+}
+/* On the ink-dark bands a solid terracotta fill is right, but the outline
+   variant starts transparent, so give it the fill too. */
+.btn-outline-light:hover,
+.btn-outline-light:active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+/* Non-button clickables that were white by default. */
+.lu-chip:hover,
+.app-search:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+/* ---------- item 4: editor mode toggle + inserted table ---------- */
+.aidemo-mode {
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+  transition: background 0.18s var(--ease), color 0.18s var(--ease), border-color 0.18s var(--ease);
+}
+.aidemo-mode:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.aidemo-mode.is-on {
+  background: var(--ink);
+  color: #fdfdfb;
+}
+.aidemo-mode.is-on:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.aidemo-manual {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.62;
+  color: var(--faint);
+  font-style: italic;
+}
+.aidemo-caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--accent);
+  animation: caret-blink 1.1s step-end infinite;
+}
+@keyframes caret-blink {
+  50% { opacity: 0; }
+}
+/* Nothing to revise on a blank page — say so by dimming rather than hiding,
+   so the panel does not change height when the mode flips. */
+.aidemo.is-manual .aidemo-ask {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.aidemo-btn:disabled {
+  cursor: default;
+}
+
+.aidemo-table {
+  margin-top: 14px;
+  /* .aidemo-doc is display:flex, so this is a flex item. Without an explicit
+     basis it shrink-to-fits its content and sits at one fixed width no matter
+     how wide the card is — 473px in a 959px card, leaving a dead gap on the
+     right. flex-basis 100% + min-width 0 makes it track the card instead. */
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  /* Scroll, never clip. This was overflow:hidden, so on a narrow card the
+     right-hand columns were cut off with no way to reach them. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  animation: panel-in 0.34s var(--ease) both;
+}
+.aidemo-table table {
+  width: 100%;
+  /* Below this the columns would crush; the wrapper scrolls instead. */
+  min-width: 344px;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+  /* Fixed layout so the columns keep the proportions set in colgroup rather
+     than being re-measured from content on every card width. */
+  table-layout: fixed;
+}
+.aidemo-table th,
+.aidemo-table td {
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: middle;
+}
+.aidemo-table thead th {
+  background: var(--paper-3);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--subtle);
+  font-weight: 700;
+  line-height: 1.35;
+  vertical-align: bottom;
+}
+.aidemo-table tbody th {
+  font-weight: 600;
+  color: var(--ink);
+}
+.aidemo-table td {
+  color: var(--muted);
+}
+/* Time and cost are figures: right-aligned, lined up on the digit, and never
+   broken. "$12–$25" was wrapping after the en dash into "$12–" / "$25", which
+   is what made the prices look truncated. */
+.aidemo-table tbody tr > :nth-child(2),
+.aidemo-table tbody tr > :nth-child(3),
+.aidemo-table thead th:nth-child(2),
+.aidemo-table thead th:nth-child(3) {
+  text-align: right;
+}
+/* nowrap belongs on the values, not the headings: a value that breaks is
+   unreadable, a two-line heading is just a heading. */
+.aidemo-table tbody tr > :nth-child(2),
+.aidemo-table tbody tr > :nth-child(3) {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  color: var(--ink);
+}
+.aidemo-table tr:last-child th,
+.aidemo-table tr:last-child td {
+  border-bottom: 0;
+}
+/* Below ~400px a four-column table with price ranges cannot fit without either
+   breaking the figures or crushing the words, so it scrolls sideways instead —
+   the same answer the hero board uses at .lineup-cols. Nothing is ever cut off
+   and unreachable, which is the part that matters. */
+@media (max-width: 560px) {
+  .aidemo-table table {
+    font-size: 0.72rem;
+  }
+  .aidemo-table th,
+  .aidemo-table td {
+    padding: 8px 9px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aidemo-caret { animation: none; }
+  .aidemo-table { animation: none; }
+}
+
+}
+
+/* ---------- campaign list: the row that just changed ----------
+   Matches the publishing queue's flash, so a state change reads the same
+   wherever it happens. */
+.tree-item {
+  transition: border-color 0.3s var(--ease), background 0.3s var(--ease), box-shadow 0.3s var(--ease);
+}
+.tree-item.is-moved {
+  animation: tree-flash 1.1s var(--ease) both;
+}
+@keyframes tree-flash {
+  0%   { border-color: var(--accent); background: var(--accent-soft); box-shadow: var(--shadow-sm); }
+  60%  { border-color: var(--accent); background: var(--accent-soft); }
+  100% { border-color: var(--rule); background: #fff; box-shadow: none; }
+}
+/* The pill itself swaps in rather than snapping. */
+.tree-item .state {
+  animation: pill-in 0.34s var(--ease) both;
+}
+@keyframes pill-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tree-item.is-moved,
+  .tree-item .state { animation: none; }
 }

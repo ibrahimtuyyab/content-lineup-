@@ -1264,7 +1264,7 @@ const accounts = () => {
     size: 11,
     fill: C.subtle,
   });
-  s += t(CX + CW - 18, sy + 28, 'Unlimited accounts on every plan', {
+  s += t(CX + CW - 18, sy + 28, 'Up to 25 accounts on Agency', {
     size: 10.5,
     weight: 600,
     fill: C.sched,
@@ -1285,110 +1285,117 @@ const editor = () => {
   const px = CX + docW + 16;
   const pw = CW - docW - 16;
 
-  /* ---- mode toggle: AI or manual, and the AI is not compulsory ---- */
-  s += rect(CX, y0, docW, 40, { r: 10, fill: C.white, stroke: C.rule });
-  s += rect(CX + 8, y0 + 7, 132, 26, { r: 7, fill: C.accent });
-  s += t(CX + 74, y0 + 24, 'Generate with AI', { size: 11, weight: 600, fill: C.white, anchor: 'middle' });
-  s += t(CX + 216, y0 + 24, 'Write manually', { size: 11, weight: 500, fill: C.subtle, anchor: 'middle' });
-  s += t(CX + docW - 16, y0 + 24, 'Draft · autosaved 12s ago', { size: 10, mono: true, fill: C.faint, anchor: 'end' });
+  /* ---- mode toggle: AI or manual, and the AI is not compulsory ----
+     Type through this whole screen is sized for the tour frame, which shows the
+     full 1240px board inside ~664px — a 0.54 fit scale. Everything here is set
+     roughly 1.4x its natural size so it survives that reduction; the containers
+     are sized to the enlarged text rather than the other way round. */
+  s += rect(CX, y0, docW, 44, { r: 10, fill: C.white, stroke: C.rule });
+  s += rect(CX + 8, y0 + 8, 156, 30, { r: 7, fill: C.accent });
+  s += t(CX + 86, y0 + 28, 'Generate with AI', { size: 14.5, weight: 700, fill: C.white, anchor: 'middle' });
+  s += t(CX + 250, y0 + 28, 'Write manually', { size: 14.5, weight: 600, fill: C.subtle, anchor: 'middle' });
+  s += t(CX + docW - 16, y0 + 28, 'Draft · autosaved 12s ago', { size: 12, mono: true, fill: C.faint, anchor: 'end' });
 
   /* ---- the document ---- */
-  const dy0 = y0 + 52;
+  const dy0 = y0 + 56;
   s += rect(CX, dy0, docW, H - dy0 - 26, { r: 10, fill: C.white, stroke: C.rule });
   const dx = CX + 26;
   const dw = docW - 52;
 
-  s += t(dx, dy0 + 36, 'How to Choose a Wedding Florist:', { size: 19, weight: 600, serif: true, spacing: -0.4 });
-  s += t(dx, dy0 + 60, '9 Questions to Ask First', { size: 19, weight: 600, serif: true, spacing: -0.4 });
-  s += t(dx, dy0 + 82, 'choosing a wedding florist  ·  1,480 words  ·  6 sections', {
-    size: 10,
+  s += t(dx, dy0 + 40, 'How to Choose a Wedding Florist:', { size: 23, weight: 700, serif: true, spacing: -0.4 });
+  s += t(dx, dy0 + 70, '9 Questions to Ask First', { size: 23, weight: 700, serif: true, spacing: -0.4 });
+  s += t(dx, dy0 + 96, 'choosing a wedding florist  ·  1,480 words  ·  6 sections', {
+    size: 12,
+    weight: 500,
     mono: true,
     fill: C.accentStrong,
   });
-  s += line(CX, dy0 + 96, CX + docW, dy0 + 96, C.ruleSoft);
+  s += line(CX, dy0 + 112, CX + docW, dy0 + 112, C.ruleSoft);
 
   // the section currently being revised
-  s += rect(dx - 12, dy0 + 108, dw + 24, 96, { r: 8, fill: C.accentSoft, opacity: 0.55 });
-  s += rect(dx - 12, dy0 + 108, 3, 96, { r: 2, fill: C.accent });
-  s += t(dx, dy0 + 130, 'Introduction', { size: 10, weight: 700, mono: true, fill: C.accentStrong, spacing: 0.6 });
-  s += t(dx, dy0 + 152, 'Most couples book a florist before they know what to ask.', {
-    size: 12.5,
-    weight: 500,
+  s += rect(dx - 12, dy0 + 124, dw + 24, 108, { r: 8, fill: C.accentSoft, opacity: 0.55 });
+  s += rect(dx - 12, dy0 + 124, 3, 108, { r: 2, fill: C.accent });
+  s += t(dx, dy0 + 148, 'Introduction', { size: 12, weight: 700, mono: true, fill: C.accentStrong, spacing: 0.6 });
+  s += t(dx, dy0 + 172, 'Most couples book a florist before they know what to ask.', {
+    size: 15.5,
+    weight: 650,
   });
-  s += t(dx, dy0 + 170, 'These nine questions decide whether the flowers survive the day —', { size: 12.5, fill: C.muted });
-  s += t(dx, dy0 + 188, 'and whether the quote you signed is the one you pay.', { size: 12.5, fill: C.muted });
+  s += t(dx, dy0 + 194, 'These nine questions decide whether the flowers survive the day —', { size: 15.5, weight: 550, fill: C.muted });
+  s += t(dx, dy0 + 216, 'and whether the quote you signed is the one you pay.', { size: 15.5, weight: 550, fill: C.muted });
 
   // rest of the document, rendered as structure
-  let by = dy0 + 226;
+  let by = dy0 + 254;
   const para = (widths) => {
     for (const w of widths) {
-      s += rect(dx, by, dw * w, 7, { r: 4, fill: C.cream });
-      by += 14;
+      s += rect(dx, by, dw * w, 8, { r: 4, fill: C.cream });
+      by += 16;
     }
     by += 10;
   };
-  s += t(dx, by, 'H2   What does “full service” actually include?', { size: 12, weight: 600, fill: C.ink });
-  by += 20;
+  s += t(dx, by, 'H2   What does “full service” actually include?', { size: 15, weight: 700, fill: C.ink });
+  by += 24;
   para([0.97, 0.93, 0.99, 0.55]);
 
   // an inline image with its generated alt text
-  s += rect(dx, by, dw, 104, { r: 8, fill: C.peach });
-  s += `<path d="M${dx} ${by + 78} l${dw * 0.26} -30 l${dw * 0.2} 18 l${dw * 0.24} -26 l${dw * 0.3} 38 Z" fill="${C.ink}" opacity="0.12"/>`;
-  s += `<circle cx="${dx + dw - 46}" cy="${by + 30}" r="18" fill="${C.white}" opacity="0.55"/>`;
-  s += rect(dx + 10, by + 78, 172, 18, { r: 9, fill: C.white, opacity: 0.92 });
-  s += t(dx + 20, by + 91, 'alt text written · 1 of 4', { size: 9, mono: true, fill: C.muted });
-  by += 120;
+  s += rect(dx, by, dw, 78, { r: 8, fill: C.peach });
+  s += `<path d="M${dx} ${by + 58} l${dw * 0.26} -23 l${dw * 0.2} 13 l${dw * 0.24} -19 l${dw * 0.3} 29 Z" fill="${C.ink}" opacity="0.12"/>`;
+  s += `<circle cx="${dx + dw - 46}" cy="${by + 24}" r="15" fill="${C.white}" opacity="0.55"/>`;
+  s += rect(dx + 10, by + 52, 200, 22, { r: 11, fill: C.white, opacity: 0.92 });
+  s += t(dx + 22, by + 67, 'alt text written · 1 of 4', { size: 11, weight: 500, mono: true, fill: C.muted });
+  // Clear of the image, not tucked against it — the heading below is the start
+  // of a new section, so it needs the gap to read as one.
+  by += 106;
 
-  s += t(dx, by, 'H2   Nine questions to ask at the first meeting', { size: 12, weight: 600, fill: C.ink });
-  by += 20;
+  s += t(dx, by, 'H2   Nine questions to ask at the first meeting', { size: 15, weight: 700, fill: C.ink });
+  by += 24;
   para([0.95, 0.88]);
 
-  s += rect(dx, by, dw, 86, { r: 8, fill: C.paper, stroke: C.rule });
-  s += t(dx + 14, by + 22, 'FAQ BLOCK · 4 questions', { size: 9, weight: 700, mono: true, fill: C.faint, spacing: 0.6 });
+  s += rect(dx, by, dw, 94, { r: 8, fill: C.paper, stroke: C.rule });
+  s += t(dx + 16, by + 24, 'FAQ BLOCK · 4 questions', { size: 11, weight: 700, mono: true, fill: C.faint, spacing: 0.6 });
   ['H3  How far ahead should we book?', 'H3  What happens if a flower is out of season?'].forEach((q, k) => {
-    s += t(dx + 14, by + 44 + k * 20, q, { size: 10.5, weight: 550, fill: C.subtle });
+    s += t(dx + 16, by + 50 + k * 22, q, { size: 13, weight: 650, fill: C.subtle });
   });
 
   /* ---- AI assist rail ---- */
   s += rect(px, y0, pw, H - y0 - 26, { r: 10, fill: C.white, stroke: C.rule });
-  s += t(px + 20, y0 + 28, 'AI assist', { size: 13, weight: 600, serif: true });
-  s += t(px + 20, y0 + 45, 'Scoped to the selected section', { size: 10, fill: C.faint });
-  s += pill(px + pw - 96, y0 + 16, 'Optional', 'draft');
-  s += line(px, y0 + 60, px + pw, y0 + 60, C.ruleSoft);
+  s += t(px + 20, y0 + 32, 'AI assist', { size: 16.5, weight: 700, serif: true });
+  s += t(px + 20, y0 + 54, 'Scoped to the selected section', { size: 12.5, weight: 500, fill: C.faint });
+  s += pill(px + pw - 92, y0 + 14, 'Optional', 'draft');
+  s += line(px, y0 + 70, px + pw, y0 + 70, C.ruleSoft);
 
-  s += t(px + 20, y0 + 84, 'SELECTED', { size: 8, weight: 700, fill: C.faint, spacing: 0.7 });
-  s += rect(px + 20, y0 + 92, pw - 40, 30, { r: 7, fill: C.accentSoft });
-  s += t(px + 32, y0 + 112, 'Introduction', { size: 11, weight: 600, fill: C.accentStrong });
+  s += t(px + 20, y0 + 96, 'SELECTED', { size: 10.5, weight: 700, fill: C.faint, spacing: 0.7 });
+  s += rect(px + 20, y0 + 104, pw - 40, 38, { r: 7, fill: C.accentSoft });
+  s += t(px + 32, y0 + 128, 'Introduction', { size: 14, weight: 700, fill: C.accentStrong });
 
-  s += t(px + 20, y0 + 150, 'ASK FOR A CHANGE', { size: 8, weight: 700, fill: C.faint, spacing: 0.7 });
+  s += t(px + 20, y0 + 172, 'ASK FOR A CHANGE', { size: 10.5, weight: 700, fill: C.faint, spacing: 0.7 });
   const asks = ['Make the introduction shorter.', 'Open with the direct answer.', 'Add a comparison table.', 'Rewrite for a first-time buyer.'];
   asks.forEach((a, i) => {
-    const ay = y0 + 160 + i * 34;
-    s += rect(px + 20, ay, pw - 40, 28, { r: 7, fill: i === 0 ? C.ink : C.paper, stroke: i === 0 ? 'none' : C.rule });
-    s += t(px + 32, ay + 18, a, { size: 10.5, weight: i === 0 ? 600 : 450, fill: i === 0 ? C.white : C.subtle });
+    const ay = y0 + 182 + i * 42;
+    s += rect(px + 20, ay, pw - 40, 36, { r: 7, fill: i === 0 ? C.ink : C.paper, stroke: i === 0 ? 'none' : C.rule });
+    s += t(px + 32, ay + 23, a, { size: 13.5, weight: i === 0 ? 700 : 550, fill: i === 0 ? C.white : C.subtle });
   });
 
-  s += rect(px + 20, y0 + 306, pw - 40, 34, { r: 7, fill: C.white, stroke: C.rule });
-  s += t(px + 32, y0 + 328, 'Or type an instruction…', { size: 10.5, fill: C.faint });
+  s += rect(px + 20, y0 + 356, pw - 40, 42, { r: 7, fill: C.white, stroke: C.rule });
+  s += t(px + 32, y0 + 383, 'Or type an instruction…', { size: 13, weight: 500, fill: C.faint });
 
-  s += t(px + 20, y0 + 372, 'APPLIED', { size: 8, weight: 700, fill: C.faint, spacing: 0.7 });
+  s += t(px + 20, y0 + 428, 'APPLIED', { size: 10.5, weight: 700, fill: C.faint, spacing: 0.7 });
   const applied = [
     ['Make the introduction shorter.', 'Introduction · just now'],
     ['Add a supplier cost table.', 'Section 3 · 6 min ago'],
     ['Use “stems” not “florals”.', 'Whole draft · 14 min ago'],
   ];
   applied.forEach(([txt, meta], i) => {
-    const ay = y0 + 384 + i * 50;
-    s += rect(px + 20, ay, pw - 40, 42, { r: 7, fill: C.paper, stroke: C.rule });
-    s += `<g transform="translate(${px + 32} ${ay + 13}) scale(0.62)" stroke="${C.green}" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="m2 8.5 4 4 8-9"/></g>`;
-    s += t(px + 52, ay + 18, txt, { size: 10.5, weight: 500, fill: C.muted });
-    s += t(px + 52, ay + 32, meta, { size: 9, mono: true, fill: C.faint });
+    const ay = y0 + 438 + i * 56;
+    s += rect(px + 20, ay, pw - 40, 48, { r: 7, fill: C.paper, stroke: C.rule });
+    s += `<g transform="translate(${px + 32} ${ay + 15}) scale(0.78)" stroke="${C.green}" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="m2 8.5 4 4 8-9"/></g>`;
+    s += t(px + 58, ay + 21, txt, { size: 13, weight: 650, fill: C.muted });
+    s += t(px + 58, ay + 38, meta, { size: 11, weight: 500, mono: true, fill: C.faint });
   });
 
   s += line(px, H - 96, px + pw, H - 96, C.ruleSoft);
-  s += t(px + 20, H - 74, 'Every version is kept. Roll back any time.', { size: 10, fill: C.faint });
-  s += rect(px + 20, H - 64, pw - 40, 34, { r: 8, fill: C.accent });
-  s += t(px + pw / 2, H - 42, 'Send for approval', { size: 11.5, weight: 600, fill: C.white, anchor: 'middle' });
+  s += t(px + 20, H - 74, 'Every version is kept. Roll back any time.', { size: 12.5, weight: 500, fill: C.faint });
+  s += rect(px + 20, H - 66, pw - 40, 38, { r: 8, fill: C.accent });
+  s += t(px + pw / 2, H - 41, 'Send for approval', { size: 14.5, weight: 700, fill: C.white, anchor: 'middle' });
 
   return frame('editor', 'ContentLineup — Editor', s, WS.bloom);
 };

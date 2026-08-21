@@ -249,6 +249,8 @@
       if (title) title.textContent = d.t;
       var footEl = $('.lu-card-foot', el);
       if (footEl) footEl.hidden = true;
+      // The template may have been mid-tilt when it was cloned.
+      el.removeAttribute('style');
       return el;
     };
 
@@ -469,13 +471,93 @@
       }, 420);
     };
 
+    var tableEl = $('#ai-demo-table');
+    var manualEl = $('#ai-demo-manual');
+    var askEl = $('.aidemo-ask', aidemo);
+
+    // The "comparison table" instruction inserts a real table into the draft;
+    // every other instruction hides it again, because the draft it describes
+    // no longer contains one.
+    var showTable = function (on) {
+      if (tableEl) tableEl.hidden = !on;
+    };
+
     $$('.aidemo-btn', aidemo).forEach(function (b) {
       b.addEventListener('click', function () {
-        if (b.dataset.ins === 'reset') { swap(original, null); return; }
+        if (b.dataset.ins === 'reset') { swap(original, null); showTable(false); return; }
         var ins = instructions[Number(b.dataset.ins)];
-        if (ins) swap(ins.result, b);
+        if (!ins) return;
+        swap(ins.result, b);
+        showTable(ins.id === 'table');
       });
     });
+
+    /* Editor mode: "Generate with AI" vs "Write manually". Manual is a genuinely
+       blank page — no AI copy, and the revision buttons are disabled, because
+       there is nothing generated to revise. */
+    var modes = $$('.aidemo-mode', aidemo);
+    var setMode = function (mode) {
+      var manual = mode === 'manual';
+      modes.forEach(function (m) {
+        var on = m.dataset.mode === mode;
+        m.classList.toggle('is-on', on);
+        m.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      aidemo.classList.toggle('is-manual', manual);
+      if (textEl) textEl.hidden = manual;
+      if (manualEl) manualEl.hidden = !manual;
+      showTable(false);
+      if (!manual) swap(original, null);
+      if (askEl) askEl.setAttribute('aria-hidden', manual ? 'true' : 'false');
+      $$('.aidemo-btn', aidemo).forEach(function (b) { b.disabled = manual; });
+      track('AI demo mode', { mode: mode });
+    };
+    modes.forEach(function (m) {
+      m.addEventListener('click', function () { setMode(m.dataset.mode); });
+    });
+  }
+
+  /* ---------- campaign list: rows advance ----------
+     The board and the publishing queue both move; this table was the one place
+     showing content states that sat completely still. Same idea as the queue —
+     one row at a time steps Draft -> In review -> Scheduled -> Published — so
+     the three views tell the same story at the same tempo.
+
+     Only rows in the visible account panel are touched, and the interval is
+     stopped when the section scrolls out of view or the tab is hidden. */
+  var tree = $('.tree');
+  if (tree && !reduced) {
+    var TREE_ORDER = ['draft', 'review', 'scheduled', 'published'];
+    var TREE_LABEL = { draft: 'Draft', review: 'In review', scheduled: 'Scheduled', published: 'Published' };
+    var treeCursor = 0;
+    var treeTimer = null;
+
+    var treeAdvance = function () {
+      var panel = $$('.tree-panel', tree).filter(function (pn) { return !pn.hidden; })[0];
+      if (!panel) return;
+      var items = $$('.tree-item', panel);
+      if (!items.length) return;
+
+      var row = items[treeCursor % items.length];
+      treeCursor++;
+      var pill = $('.state', row);
+      if (!pill) return;
+
+      var current = (pill.className.match(/state-([a-z]+)/) || [])[1] || 'draft';
+      var next = TREE_ORDER[(TREE_ORDER.indexOf(current) + 1) % TREE_ORDER.length];
+
+      pill.className = 'state state-' + next;
+      pill.innerHTML = '<span class="tick"></span>' + TREE_LABEL[next];
+      // Restart the flash: remove, force reflow, re-add.
+      row.classList.remove('is-moved');
+      void row.offsetWidth;
+      row.classList.add('is-moved');
+    };
+
+    var treeStart = function () { if (!treeTimer) treeTimer = window.setInterval(treeAdvance, 2600); };
+    var treeStop = function () { window.clearInterval(treeTimer); treeTimer = null; };
+    onView(tree, function (visible) { visible ? treeStart() : treeStop(); }, { threshold: 0.25 });
+    document.addEventListener('visibilitychange', function () { document.hidden ? treeStop() : treeStart(); });
   }
 
   /* ---------- animated counters ---------- */

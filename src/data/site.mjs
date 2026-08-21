@@ -292,7 +292,7 @@ export const features = [
     body:
       'Each brand or client gets its own account: its own voice, its own channels, its own campaigns, its own approval chain, its own calendar. Switch between them from one login, or open the all-accounts view and see everything publishing this week in a single grid.',
     bullets: [
-      'Unlimited accounts on every plan',
+      '25 client accounts on the Agency plan',
       'Per-account voice, channels, reviewers and keywords',
       'One cross-account view of everything going out this week',
       'Accounts are isolated at the data layer — one client cannot see another',
@@ -326,6 +326,7 @@ export const features = [
       'Not everything worth posting is a blog post. Write standalone posts for LinkedIn, Facebook and Instagram in the same workspace, schedule each to its own date and time, and watch them move through the same states as everything else. One place for the whole content operation instead of a blog tool plus a social scheduler.',
     bullets: [
       'Compose once and adapt per channel, or write each separately',
+      'Captions and hashtags written for each channel, from your account preset',
       'Per-post scheduling to the minute, same as blog posts',
       'The approval gate applies to social posts too',
       'Upload an image or reuse one from the library',
@@ -770,6 +771,21 @@ export const ideaDemo = {
 // AI + manual demo: the revision instruction and the before/after copy.
 // ---------------------------------------------------------------------------
 export const aiDemo = {
+  // Shown when the editor is switched to "Write manually" — a genuinely empty
+  // page, because that is what the mode means.
+  manualPlaceholder: 'Start typing. No AI involved — the calendar, approvals and publishing work exactly the same.',
+  // Rendered as a real table when the "comparison table" instruction is picked.
+  table: {
+    // Column widths for the fixed table layout, so the figures keep their
+    // room and the two prose columns absorb the rest.
+    cols: ['31%', '17%', '22%', '30%'],
+    head: ['Job', 'Time', 'Typical cost', 'Saves per season'],
+    rows: [
+      ['Replace the filter', '5 min', '$12–$25', 'Up to 15% on cooling'],
+      ['Clear the condenser', '20 min', '$0', 'Up to 7% on cooling'],
+      ['Professional tune-up', '60 min', '$90–$150', 'Fewer mid-summer failures'],
+    ],
+  },
   section: 'Introduction',
   original:
     'When it comes to the topic of summer air conditioning maintenance, there are a number of important considerations that homeowners should be aware of before the warmer months arrive, and understanding these factors can help you make more informed decisions about the care of your cooling system over the course of the season.',
@@ -1179,22 +1195,23 @@ export const plans = [
     numeric: '0',
     annual: null, // free is free either way — no toggle state to show
     kicker: 'Free forever',
-    outcome: 'Get your first month of content published.',
+    outcome: 'Publish your first five posts, free.',
     summary:
-      'The whole workflow — ideas, calendar, approvals, publishing — with unlimited posts. You add your own OpenAI or Gemini key and pay them directly, or write everything by hand and use no AI at all.',
+      'The whole workflow — ideas, calendar, approvals, publishing — for one brand, five posts a month. You add your own OpenAI or Gemini key and pay them directly, or write everything by hand and use no AI at all.',
     cta: { label: 'Start free', href: site.app.signup },
     featured: false,
     includes: [
-      'Unlimited posts, ideas and campaigns',
-      'Unlimited brands and client accounts',
+      '5 posts a month',
+      '1 brand or client account',
       'Content calendar and per-post scheduling',
       'AI drafts on your own key — or write manually',
       'Images matched to each section with alt text',
+      '1 seat',
       'Publish to LinkedIn, Facebook and Instagram',
       'Markdown, HTML and spreadsheet export',
       'Email support',
     ],
-    limits: 'No limit on posts from us. If you use AI, your own provider bills you at cost.',
+    limits: '5 posts a month, 1 account, 1 seat. If you use AI, your own provider bills you at cost.',
   },
   {
     id: 'managed',
@@ -1215,15 +1232,16 @@ export const plans = [
     featured: true,
     includes: [
       'Everything in Free',
-      '40 AI-generated posts a month included',
+      '40 posts a month, AI writing included',
       'No OpenAI or Gemini account needed',
       'Approval workflow with named reviewers',
+      '5 brand or client accounts',
       '3 team seats',
       'Publishing log with live URLs',
       'Publishing webhooks and REST API',
       'Priority email support',
     ],
-    limits: '40 AI posts a month. Unused posts do not roll over. Add your own key any time to remove the cap.',
+    limits: '40 posts a month across 5 accounts, 3 seats. Unused posts do not roll over. Add your own key any time to lift the post limit.',
   },
   {
     id: 'agency',
@@ -1233,14 +1251,15 @@ export const plans = [
     numeric: '89',
     annual: { price: '$890', numeric: '890', perMonth: '$74', saving: '2 months free' },
     kicker: 'For client work',
-    outcome: 'Run twelve clients without twelve calendars.',
+    outcome: 'Run twenty-five clients without twenty-five calendars.',
     summary:
       'Everything in Team, at client volume: a separate brand voice for each client, their own approval chain, and review links that let them sign off without an account.',
     cta: { label: 'Start free', href: site.app.signup },
     featured: false,
     includes: [
       'Everything in Team',
-      '175 AI-generated posts a month included',
+      '175 posts a month, AI writing included',
+      '25 brand or client accounts',
       '15 team seats',
       'Per-client brand voice and approval chains',
       'Client review links — no seat required',
@@ -1248,14 +1267,14 @@ export const plans = [
       'Spreadsheet export of every content plan',
       'Priority support with a named contact',
     ],
-    limits: '175 AI posts a month across all accounts. Bring your own key on any account to remove the cap.',
+    limits: '175 posts a month across 25 accounts, 15 seats. Bring your own key on any account to lift the post limit.',
   },
 ];
 
 export const pricingFaqs = [
   {
     q: 'What does "free forever" actually mean?',
-    a: 'The bring-your-own-key plan is $0 per month with no article cap and no feature gates. You connect an OpenAI or Gemini key and pay that provider directly for the tokens you use. We do not take a cut of it and the plan does not expire.',
+    a: 'The free plan is $0 per month, forever, with no card. It covers one brand and five posts a month, and every part of the workflow is included — calendar, approvals, publishing, export. You connect an OpenAI or Gemini key and pay that provider directly for the tokens you use. We do not take a cut of it and the plan does not expire.',
   },
   {
     q: 'How much does bringing my own key cost me in practice?',
@@ -1330,7 +1349,7 @@ export const faqGroups = [
       },
       {
         q: 'Can I manage multiple brands or clients?',
-        a: 'Yes, on every plan, with no cap on how many. Each brand or client is its own account with its own voice, channels, campaigns, reviewers and calendar. You switch between them from a single login, or open the cross-account view to see everything publishing this week in one grid. Accounts are isolated at the data layer, so one client can never see another.',
+        a: 'Yes, from the Team plan up — 5 accounts on Team and 25 on Agency, with one on the free plan. Each brand or client is its own account with its own voice, channels, campaigns, reviewers and calendar. You switch between them from a single login, or open the cross-account view to see everything publishing this week in one grid. Accounts are isolated at the data layer, so one client can never see another.',
         home: true,
       },
       {
@@ -1506,7 +1525,7 @@ export const comparison = {
       detail: 'Separate voice, channels, reviewers and calendar per account',
       values: ['yes', 'partial', 'partial'],
       notes: [
-        'Unlimited accounts on every plan, isolated at the data layer, one login',
+        'Up to 25 accounts, isolated at the data layer, one login',
         'Usually one workspace; brand voice is something you re-paste each time',
         'Common, but usually gated behind the highest tier and priced per channel',
       ],
@@ -1622,7 +1641,7 @@ export const comparison = {
       detail: 'What you actually pay',
       values: ['note', 'note', 'note'],
       notes: [
-        'Free forever, unlimited posts and brands; $29/mo adds included AI writing',
+        'Free forever for 1 brand and 5 posts a month; $29/mo adds 40 posts and 5 accounts',
         'Typically $20–$99/mo per seat, with generation credits metered',
         'Typically per-channel or per-seat, climbing quickly with team size',
       ],

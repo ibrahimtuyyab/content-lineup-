@@ -12,7 +12,7 @@ import {
   pricingSection,
   resourceStrip,
 } from '../lib/home-sections.mjs';
-import { faqSection } from '../lib/blocks.mjs';
+import { faqSection, keyModesSection } from '../lib/blocks.mjs';
 import { homeFaqs, plans, stages } from '../data/site.mjs';
 import { posts, featured } from '../data/content.mjs';
 import { abs } from '../lib/html.mjs';
@@ -48,6 +48,7 @@ ${tourSection()}
 ${teamsSection()}
 ${channelsSection()}
 ${aiSection()}
+${keyModesSection()}
 ${proofSection(caseStudy)}
 ${audienceSection()}
 ${pricingSection()}

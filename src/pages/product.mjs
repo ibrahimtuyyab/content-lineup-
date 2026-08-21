@@ -483,9 +483,9 @@ export function pricingPage() {
   const body = `
 ${pageHero({
   kicker: 'Pricing',
-  title: 'Start free. Pay when it saves you a day a week.',
+  title: 'Start free. Upgrade when you outgrow it.',
   lead:
-    'Every plan includes the whole workflow — ideas, campaigns, the content calendar, approvals, unlimited brands and automatic publishing. What changes between them is how much AI writing is included.',
+    'Every plan includes the whole workflow — ideas, campaigns, the content calendar, approvals and automatic publishing. What changes between them is how many posts, accounts and seats you get.',
   crumbs: [
     { label: 'Home', href: '/' },
     { label: 'Pricing', href: '/pricing' },
@@ -610,7 +610,7 @@ ${finalCta({
     ogImage: '/og/pricing.png',
     title: 'Pricing — free content calendar, $29 with AI | ContentLineup',
     description:
-      'Free forever: unlimited posts, brands, calendar, approvals and publishing. $29/month adds 40 AI-written posts. $89/month for agencies. No card to start.',
+      'Free forever: 1 brand, 5 posts a month, with the calendar, approvals and publishing. $29/month adds 40 posts and 5 accounts. $89/month for agencies. No card to start.',
     body,
     schema: [
       softwareSchema(plans),

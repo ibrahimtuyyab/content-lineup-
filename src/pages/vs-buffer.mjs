@@ -52,7 +52,7 @@ export default function vsBufferPage() {
     },
     {
       q: 'Which is cheaper?',
-      a: 'They price on different axes, so it depends on shape. Buffer charges per connected channel, which climbs as you add networks and clients. ContentLineup is $0/month for the whole workflow with unlimited posts and brands — you supply your own AI key or write manually — or $29/month with AI writing included. The three social channels are on every plan rather than priced per channel.',
+      a: 'They price on different axes, so it depends on shape. Buffer charges per connected channel, which climbs as you add networks and clients. ContentLineup is $0/month for the whole workflow on one brand at five posts a month — you supply your own AI key or write manually — or $29/month for 40 posts across five accounts with AI writing included. The three social channels are on every plan rather than priced per channel.',
     },
   ];
 
@@ -61,7 +61,7 @@ export default function vsBufferPage() {
     ['Gets the article onto your site', 'partial', 'Markdown/HTML export, webhooks and a REST API today; native WordPress and Payload CMS in development', 'no', 'Social channels only — no concept of a blog post'],
     ['Content calendar', 'yes', 'Blog and social on one month grid, filtered by account or campaign', 'yes', 'Mature social calendar, social posts only'],
     ['Ideas and campaigns', 'yes', 'Idea board promoted into briefs, grouped into campaigns', 'no', 'You arrive with the post already written'],
-    ['Multiple brands and clients', 'yes', 'Unlimited accounts on every plan, one login', 'yes', 'Supported, priced per connected channel'],
+    ['Multiple brands and clients', 'yes', 'Up to 25 accounts on one login', 'yes', 'Supported, priced per connected channel'],
     ['LinkedIn', 'yes', 'Personal profile or company page', 'yes', 'Supported, with more post types than we offer'],
     ['Facebook', 'yes', 'Pages, link and image posts', 'yes', 'Supported, including Groups'],
     ['Instagram', 'yes', 'Business/Creator feed posts', 'yes', 'Supported, including Stories and Reels'],
@@ -72,7 +72,7 @@ export default function vsBufferPage() {
     ['Images matched with alt text', 'yes', 'Featured plus inline, matched per section', 'partial', 'You attach media yourself'],
     ['SEO meta, slug, keyword check', 'yes', 'Generated and length-checked per article', 'no', 'Not applicable to social posts'],
     ['Approval workflow', 'yes', 'Covers articles and social posts', 'yes', 'Available on higher tiers'],
-    ['Free tier', 'yes', '$0/mo forever: unlimited posts, brands, calendar and approvals', 'yes', 'Free tier with channel and post limits'],
+    ['Free tier', 'yes', '$0/mo forever: 1 brand, 5 posts a month, full workflow', 'yes', 'Free tier with channel and post limits'],
   ];
 
   const body = `

@@ -236,8 +236,8 @@ own brand voice, channels, reviewers and calendar, under one login.
 - Pricing: ${plans
     .map((p) => `${p.name} ${p.price}${p.period}${p.annual ? ` (or ${p.annual.price}/year — ${p.annual.saving})` : ''}`)
     .join('; ')}
-- The free plan includes the whole workflow with unlimited posts, campaigns and brands.
-  Paid plans add included AI generation and the approval workflow.
+- The free plan includes the whole workflow for one brand at five posts a month.
+  Paid plans add included AI generation, more accounts and seats, and the approval workflow.
 - Channels live today: ${channels.filter((c) => c.status === 'live').map((c) => c.name).join(', ')}.
 - Channels in development (NOT shipped): ${channels.filter((c) => c.status === 'soon').map((c) => c.name).join(', ')}.
 - Blog publishing today works through Markdown/HTML export, publishing webhooks and a REST API.

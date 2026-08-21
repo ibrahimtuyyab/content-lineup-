@@ -4,7 +4,7 @@
 // published post — Idea → Generate → Calendar → Approve → Publish — rather than
 // an AI writer bolted onto a scheduler. Every section below is one beat of that
 // argument, and no two sections use the same layout.
-import { esc, icon, btn, sectionHead, eyebrow, soonChip, ambientDots } from './html.mjs';
+import { esc, icon, btn, sectionHead, eyebrow, soonChip } from './html.mjs';
 import { billingToggle } from './blocks.mjs';
 import { postMedia } from './media.mjs';
 import { appShell } from './app-shell.mjs';
@@ -135,7 +135,6 @@ export const lineupBoard = () => `
 export const heroSection = () => `
 <section class="hero">
   <div class="hero-bg" data-parallax="0.03"></div>
-  ${ambientDots(26, "is-hero")}
   <div class="hero-rules" aria-hidden="true"></div>
   <div class="wrap hero-center">
     <div class="hero-text">
@@ -170,8 +169,8 @@ export const channelBand = () => `
   <div class="wrap">
     <div class="band-inner">
       <div class="band-lede">
-        <h2 id="band-h">Native publishing.<br>No copy-paste.</h2>
-        <p>Connect a channel once. Approved content goes out on the date you picked, formatted for where it lands.</p>
+        <h2 id="band-h">Publish once.<br>It lands everywhere.</h2>
+        <p>Connect your channels once. Schedule a post to one of them and tick the others to go out at the same time &mdash; one date, one approval, every account. Each channel still gets copy written for it, not the same text pasted three times.</p>
       </div>
       <ul class="band-list">
         ${channels
@@ -182,16 +181,11 @@ export const channelBand = () => `
             c.id === 'wordpress' ? 'globe' : c.id === 'payload' ? 'layers' : c.id
           )}</span>
           <span class="band-name">${esc(c.name)}</span>
-          <span class="band-status">${c.status === 'live' ? 'Live' : 'Coming soon'}</span>
         </li>`
           )
           .join('')}
       </ul>
     </div>
-    <p class="band-note">
-      Blog publishing today runs through Markdown and HTML export, publishing webhooks and the REST API &mdash;
-      all live. Native <b>WordPress</b> and <b>Payload CMS</b> connectors are in development.
-    </p>
     <a class="band-link" href="/integrations">All integrations ${icon('arrow')}</a>
   </div>
 </section>`;
@@ -204,9 +198,9 @@ export const problemSection = () => `
   <div class="wrap">
     ${sectionHead({
       kicker: 'The problem',
-      title: 'Content doesn&rsquo;t fail at the writing.<br>It fails between the idea and the publish button.',
+      title: 'AI writes the post. You approve it.<br>It publishes itself.',
       lead:
-        'Writing is rarely the hard part. What stops most content is everything around it: the idea nobody wrote down, the draft still waiting on a reply, the post that was approved but never scheduled.',
+        'That is the whole job. No copying a draft into a CMS, no setting the same post up on four channels, no diary reminder to hit publish on Thursday. You read it, you say yes, and the rest happens on the date you picked.',
     })}
 
     <div class="chain reveal">
@@ -418,7 +412,7 @@ export const teamsSection = () => `
         </button>`
           )
           .join('')}
-        <p class="tree-more">Unlimited accounts on every plan.</p>
+        <p class="tree-more">5 accounts on Team, 25 on Agency.</p>
       </div>
 
       <div class="tree-panels">
@@ -542,7 +536,7 @@ const previewLinkedIn = (o) => {
     ${o.lines.map((l) => (l === '' ? '<p class="pv-gap"></p>' : `<p>${esc(l)}</p>`)).join('')}
   </div>
   <a class="pv-link" tabindex="-1" aria-hidden="true">
-    ${postMedia({ key: 'summer-ac', alt: 'An outdoor air-conditioning condenser unit beside a house wall in summer sun.' })}
+    ${postMedia({ key: 'summer-ac', alt: 'A service technician in a Cool Care uniform opening a wall-mounted air-conditioning unit, a cover across it reading “please don’t use AC under maintenance”, and a gauge outside the window reading 42 degrees.' })}
     <div class="pv-link-meta">
       <b>${esc(p.link.title)}</b>
       <span>${esc(p.link.domain)}</span>
@@ -575,7 +569,7 @@ const previewInstagram = (o) => {
     </div>
     <span class="pv-more">${icon('dots')}</span>
   </div>
-  ${postMedia({ key: 'summer-ac', alt: 'An outdoor air-conditioning condenser unit beside a house wall in summer sun.' })}
+  ${postMedia({ key: 'summer-ac', alt: 'A service technician in a Cool Care uniform opening a wall-mounted air-conditioning unit, a cover across it reading “please don’t use AC under maintenance”, and a gauge outside the window reading 42 degrees.' })}
   ${pvActions([
     { i: 'heart' },
     { i: 'bubble' },
@@ -612,7 +606,7 @@ const previewFacebook = (o) => {
     ${o.lines.map((l) => (l === '' ? '<p class="pv-gap"></p>' : `<p>${esc(l)}</p>`)).join('')}
   </div>
   <div class="pv-link pv-link-fb">
-    ${postMedia({ key: 'summer-ac', alt: 'An outdoor air-conditioning condenser unit beside a house wall in summer sun.' })}
+    ${postMedia({ key: 'summer-ac', alt: 'A service technician in a Cool Care uniform opening a wall-mounted air-conditioning unit, a cover across it reading “please don’t use AC under maintenance”, and a gauge outside the window reading 42 degrees.' })}
     <div class="pv-link-meta">
       <span>${esc(p.link.domain)}</span>
       <b>${esc(p.link.title)}</b>
@@ -703,6 +697,7 @@ export const aiSection = () => `
           <li>${icon('check')}<span><b>Generate with AI</b> &mdash; outline first, in your brand voice</span></li>
           <li>${icon('check')}<span><b>Or write manually</b> &mdash; a blank editor, no AI involved</span></li>
           <li>${icon('check')}<span>Revise by asking: &ldquo;make the intro shorter&rdquo;, &ldquo;add a table&rdquo;</span></li>
+          <li>${icon('check')}<span><b>Captions and hashtags</b> &mdash; written per channel, from your account preset</span></li>
           <li>${icon('check')}<span>Full version history &mdash; roll back anything</span></li>
         </ul>
         <div class="cta-row" style="margin-top:26px">
@@ -713,13 +708,24 @@ export const aiSection = () => `
       <div class="split-visual reveal">
         <div class="aidemo" id="ai-demo" data-instructions='${esc(JSON.stringify(aiDemo.instructions))}'>
           <div class="aidemo-head">
-            <span class="aidemo-modes">
-              <b class="is-on">Generate with AI</b><span>Write manually</span>
+            <span class="aidemo-modes" role="group" aria-label="Editor mode">
+              <button type="button" class="aidemo-mode is-on" data-mode="ai" aria-pressed="true">Generate with AI</button>
+              <button type="button" class="aidemo-mode" data-mode="manual" aria-pressed="false">Write manually</button>
             </span>
             <span class="aidemo-sec">${esc(aiDemo.section)}</span>
           </div>
           <div class="aidemo-doc">
             <p class="aidemo-text" id="ai-demo-text">${esc(aiDemo.original)}</p>
+            <div class="aidemo-table" id="ai-demo-table" hidden>
+              <table>
+                <colgroup>${aiDemo.table.cols.map((w) => `<col style="width:${w}">`).join('')}</colgroup>
+                <thead><tr>${aiDemo.table.head.map((h) => `<th scope="col">${esc(h)}</th>`).join('')}</tr></thead>
+                <tbody>${aiDemo.table.rows
+                  .map((r) => `<tr>${r.map((c, i) => (i ? `<td>${esc(c)}</td>` : `<th scope="row">${esc(c)}</th>`)).join('')}</tr>`)
+                  .join('')}</tbody>
+              </table>
+            </div>
+            <p class="aidemo-manual" id="ai-demo-manual" hidden>${esc(aiDemo.manualPlaceholder)}<span class="aidemo-caret"></span></p>
           </div>
           <div class="aidemo-ask">
             <span class="aidemo-k">Ask for a change</span>
@@ -828,9 +834,9 @@ export const pricingSection = () => `
   <div class="wrap">
     ${sectionHead({
       kicker: 'Pricing',
-      title: 'Start free. Pay when it saves you a day a week.',
+      title: 'Start free. Upgrade when you outgrow it.',
       lead:
-        'Every plan gives you the whole workflow &mdash; ideas, calendar, approvals, publishing and unlimited brands. The only difference is how much AI writing is included.',
+        'Every plan gives you the whole workflow &mdash; ideas, calendar, approvals, publishing and export. What changes between them is how many posts, accounts and seats you get.',
       align: 'center',
     })}
     ${billingToggle()}
@@ -866,9 +872,7 @@ export const pricingSection = () => `
         )
         .join('')}
     </div>
-    <div class="cta-row center reveal" style="margin-top:30px">
-      ${btn('Compare plans in full', '/pricing', 'secondary', true, 'home-pricing-compare')}
-    </div>
+
   </div>
 </section>`;
 

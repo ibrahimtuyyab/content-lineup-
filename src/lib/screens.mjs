@@ -67,7 +67,7 @@ const line = (x1, y1, x2, y2, stroke = C.ruleSoft) =>
  * fully-rounded soft-tinted background. The CSS twin lives at `.state` in
  * styles.css; the colour map here mirrors --*-soft / --* exactly.
  */
-const pill = (x, y, label, tone) => {
+const pill = (x, y, label, tone, k = 1) => {
   const map = {
     draft: [C.cream, C.muted],
     scheduled: [C.schedSoft, C.sched],
@@ -78,19 +78,31 @@ const pill = (x, y, label, tone) => {
   };
   const [bg, fg] = map[tone] || map.draft;
   const text = String(label).toUpperCase();
-  // 5.05px per uppercase mono char at 9.5px, + dot + padding.
-  const w = text.length * 5.35 + 30;
+  // 5.05px per uppercase mono char at 9.5px, + dot + padding. k scales the whole
+  // component for the tour screens, which are authored at roughly twice this size.
+  const w = (text.length * 5.35 + 30) * k;
   return (
-    rect(x, y, w, 20, { r: 10, fill: bg }) +
-    `<circle cx="${x + 11}" cy="${y + 10}" r="2.5" fill="${fg}"/>` +
-    t(x + 18, y + 13.6, text, { size: 9.5, weight: 700, fill: fg, mono: true, spacing: 0.5 })
+    rect(x, y, w, 20 * k, { r: 10 * k, fill: bg }) +
+    `<circle cx="${x + 11 * k}" cy="${y + 10 * k}" r="${2.5 * k}" fill="${fg}"/>` +
+    t(x + 18 * k, y + 13.6 * k, text, {
+      size: 9.5 * k,
+      weight: 700,
+      fill: fg,
+      mono: true,
+      spacing: 0.5 * k,
+    })
   );
 };
 
 /** Small avatar disc with initials. */
-const avatar = (x, y, initials, tone = C.cream, fg = C.muted, r = 11) =>
+const avatar = (x, y, initials, tone = C.cream, fg = C.muted, r = 11, size = 9.5) =>
   `<circle cx="${x + r}" cy="${y + r}" r="${r}" fill="${tone}"/>` +
-  t(x + r, y + r + 3.6, initials, { size: 9.5, weight: 700, fill: fg, anchor: 'middle' });
+  t(x + r, y + r + Number((size * 0.379).toFixed(1)), initials, {
+    size,
+    weight: 700,
+    fill: fg,
+    anchor: 'middle',
+  });
 
 /** Simple stroke glyph set for the sidebar. */
 export const GLYPH = {
@@ -227,6 +239,162 @@ ${inner}
 const CX = SIDEBAR + 28; // content left edge
 const CW = W - SIDEBAR - 56; // content width
 
+/* ===========================================================================
+   The tour layout
+
+   Five of these screens — ideas, editor, calendar, approvals, publishing — are
+   the ones the homepage tour shows. The tour draws the full 1240px board inside
+   about 664px, a 0.54 fit, and every length in an SVG shrinks by that factor
+   including the type. A 12px UI label lands at 6.4px on screen, which is sharp
+   (this is vector) and still unreadable, because at that size the glyph stems
+   fall below one device pixel.
+
+   So these five are authored on a second, deliberately sparse layout: a wider
+   sidebar, a taller topbar, fewer items, and type roughly twice its natural UI
+   size. TT below is the floor. The rule that keeps it honest is:
+
+     anything meant to be READ is at least TT.meta;
+     anything not meant to be read is drawn as a bar, not set as small text.
+
+   The other eight screens keep the dense layout — they are shown as figures and
+   thumbnails where the point is the shape of the page, not its words.
+   =========================================================================== */
+
+// Authored size -> what it measures on screen in the tour frame (x0.536).
+const TT = {
+  h1: 30, //   16.1px  screen title
+  h2: 24, //   12.9px  section heading
+  body: 22, // 11.8px  card titles, list rows, buttons
+  meta: 19, // 10.2px  secondary meta, keywords, column counts
+  micro: 17, //  9.1px  pill labels and chips (via pill(..., PK))
+};
+const PK = 1.8; // pill scale: 9.5 * 1.8 = 17.1 authored
+
+const SIDEBAR_L = 292;
+const TOPBAR_L = 86;
+const CX_L = SIDEBAR_L + 32;
+const CW_L = W - SIDEBAR_L - 64;
+
+/** Truncate to a pixel budget. Monospace advance is ~0.6em, Inter's is ~0.52em;
+    both are close enough that a label sized by this never leaves its card. */
+const fit = (str, px, size, mono = false) => {
+  const per = size * (mono ? 0.6 : 0.52);
+  const max = Math.floor(px / per);
+  const v = String(str);
+  return v.length <= max ? v : v.slice(0, Math.max(1, max - 1)) + '…';
+};
+
+/** Greedy wrap to a character budget. Returns at most `max` lines. */
+const wrap = (str, chars, max = 2) => {
+  const out = [];
+  let cur = '';
+  for (const word of String(str).split(' ')) {
+    if (!cur) cur = word;
+    else if (cur.length + 1 + word.length <= chars) cur += ' ' + word;
+    else {
+      out.push(cur);
+      cur = word;
+      if (out.length === max) break;
+    }
+  }
+  if (cur && out.length < max) out.push(cur);
+  return out.slice(0, max);
+};
+
+// The tour sidebar carries seven destinations rather than eleven: at this type
+// size eleven rows would not fit, and the seven kept are the ones the tour copy
+// actually walks through.
+const NAV_L = [
+  ['plans', 'Plans'],
+  ['ideas', 'Ideas'],
+  ['calendar', 'Calendar'],
+  ['list', 'Content'],
+  ['approvals', 'Approvals'],
+  ['publishing', 'Publishing'],
+  ['settings', 'Settings'],
+];
+
+function sidebarL(active, ws = WS.northgate) {
+  let s = rect(0, 0, SIDEBAR_L, H, { r: 0, fill: C.white });
+  s += line(SIDEBAR_L, 0, SIDEBAR_L, H, C.rule);
+
+  s += `<g transform="translate(30 30) scale(0.22)">
+    <g stroke="${C.ink}" stroke-width="12" stroke-linecap="round">
+      <line x1="0" y1="16" x2="40" y2="16"/><line x1="52" y1="16" x2="78" y2="16"/>
+      <line x1="0" y1="48" x2="52" y2="48"/><line x1="64" y1="48" x2="92" y2="48"/>
+      <line x1="0" y1="80" x2="32" y2="80"/><line x1="44" y1="80" x2="70" y2="80"/>
+    </g>
+    <path d="M 104 16 L 160 48 L 104 80 L 116 48 Z" fill="${C.accent}"/>
+  </g>`;
+  s += t(78, 56, 'ContentLineup', { size: 25, weight: 600, serif: true, spacing: -0.4 });
+
+  // workspace switcher
+  s += rect(24, 92, SIDEBAR_L - 48, 68, { r: 12, fill: C.paper, stroke: C.rule });
+  s += avatar(38, 108, ws.initials, C.accentSoft, C.accentStrong, 18, 17);
+  s += t(88, 122, ws.name, { size: TT.body, weight: 600 });
+  s += t(88, 145, ws.sub, { size: TT.meta, fill: C.faint, mono: true });
+  s += `<path d="M${SIDEBAR_L - 44} 122 l6 6 6-6" stroke="${C.faint}" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+
+  s += t(30, 196, 'WORKSPACE', { size: TT.micro, weight: 700, fill: C.faint, spacing: 1.1 });
+
+  const activeNav = NAV_ALIAS[active] || active;
+  let y = 214;
+  for (const [id, label] of NAV_L) {
+    const on = id === activeNav;
+    if (on) s += rect(14, y, SIDEBAR_L - 28, 50, { r: 12, fill: C.accentSoft });
+    if (on) s += rect(14, y + 12, 4, 26, { r: 2, fill: C.accent });
+    s += `<g transform="translate(36 ${y + 13}) scale(1.5)" stroke="${
+      on ? C.accent : C.subtle
+    }" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round">${GLYPH[id]}</g>`;
+    s += t(80, y + 33, label, {
+      size: TT.body,
+      weight: on ? 600 : 450,
+      fill: on ? C.accentStrong : C.muted,
+    });
+    y += 50;
+  }
+
+  // queue health card
+  s += rect(22, 592, SIDEBAR_L - 44, 112, { r: 14, fill: C.paper, stroke: C.rule });
+  s += t(42, 622, 'QUEUE HEALTH', { size: TT.micro, weight: 700, fill: C.faint, spacing: 1 });
+  s += t(42, 660, '18 days', { size: 32, weight: 600, serif: true, fill: C.sched });
+  s += t(42, 682, 'of scheduled runway', { size: TT.meta, fill: C.subtle });
+  s += rect(42, 690, SIDEBAR_L - 84, 8, { r: 4, fill: C.cream });
+  s += rect(42, 690, (SIDEBAR_L - 84) * 0.72, 8, { r: 4, fill: C.sched });
+
+  s += avatar(26, 718, ws.user[0], C.cream, C.muted, 19, 18);
+  s += t(76, 742, ws.user[1], { size: TT.body, weight: 600 });
+  s += t(76, 764, ws.user[2], { size: TT.meta, fill: C.faint });
+  return s;
+}
+
+function topbarL(title, subtitle, action) {
+  let s = rect(SIDEBAR_L, 0, W - SIDEBAR_L, TOPBAR_L, { r: 0, fill: C.white });
+  s += line(SIDEBAR_L, TOPBAR_L, W, TOPBAR_L, C.rule);
+  s += t(CX_L, 42, title, { size: TT.h1, weight: 600, serif: true, spacing: -0.3 });
+  s += t(CX_L, 68, subtitle, { size: TT.meta, fill: C.faint });
+
+  if (action) {
+    const aw = action.length * 12 + 56;
+    s += rect(W - 32 - aw, 22, aw, 44, { r: 10, fill: C.accent });
+    s += t(W - 32 - aw + 24, 51, action, { size: TT.body, weight: 600, fill: C.white });
+    s += `<path d="M${W - 32 - 34} 44 h14 m0 0 -5 -5 m5 5 -5 5" stroke="${
+      C.white
+    }" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+  return s;
+}
+
+const frameL = (id, title, inner, ws) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(
+    title
+  )}" font-family="${SANS}">
+<title>${esc(title)}</title>
+<rect width="${W}" height="${H}" fill="${C.paper}"/>
+${sidebarL(id, ws)}
+${inner}
+</svg>`;
+
 /** Stat tiles row. */
 function stats(y, items) {
   const gap = 14;
@@ -362,165 +530,181 @@ const plans = () => {
 // IDEAS
 // ---------------------------------------------------------------------------
 const ideas = () => {
-  let s = topbar('Ideas', 'Topic backlog · 31 captured · 9 ready to brief', 'Capture idea');
+  let s = topbarL('Ideas', 'Topic backlog · 31 captured · 9 ready to brief', 'Capture idea');
 
   const colTitles = [
     ['Captured', 12, C.faint],
     ['Ready to brief', 9, C.accent],
     ['Promoted', 10, C.sched],
   ];
+  // Three cards a column rather than four: at tour type size a fourth card
+  // would push the column past the board, and the third already establishes
+  // that this is a list you keep adding to.
   const cards = [
     [
-      ['Ductless mini-split running costs', 'mini split running cost', '1.2k/mo'],
+      ['Ductless mini-split running costs', 'mini split cost', '1.2k/mo'],
       ['Why a system short-cycles', 'hvac short cycling', '880/mo'],
-      ['Smart thermostat payback period', 'smart thermostat savings', '2.4k/mo'],
-      ['Indoor air quality after wildfire smoke', 'wildfire smoke air filter', '3.1k/mo'],
+      ['Smart thermostat payback', 'thermostat savings', '2.4k/mo'],
     ],
     [
-      ['Heat pump vs furnace in a dry climate', 'heat pump vs furnace', '9.9k/mo'],
+      ['Heat pump vs furnace', 'heat pump vs gas', '9.9k/mo'],
       ['What a full tune-up includes', 'hvac tune up cost', '4.4k/mo'],
-      ['Signs your ducts are leaking', 'leaking air ducts signs', '2.7k/mo'],
+      ['Signs your ducts are leaking', 'leaking duct signs', '2.7k/mo'],
     ],
     [
-      ['Winter maintenance checklist', 'hvac winter checklist', '5.4k/mo'],
-      ['Service frequency explained', 'hvac service frequency', '6.6k/mo'],
-      ['Autumn filter replacement guide', 'when to change hvac filter', '8.1k/mo'],
+      ['Winter maintenance checklist', 'winter checklist', '5.4k/mo'],
+      ['Service frequency explained', 'service frequency', '6.6k/mo'],
+      ['Autumn filter replacement', 'hvac filter guide', '8.1k/mo'],
     ],
   ];
 
-  const colW = (CW - 28) / 3;
-  colTitles.forEach(([title, count, tone], ci) => {
-    const x = CX + ci * (colW + 14);
-    const y = TOPBAR + 26;
-    s += rect(x, y, colW, H - y - 30, { r: 10, fill: C.white, stroke: C.rule });
-    s += `<circle cx="${x + 20}" cy="${y + 21}" r="4" fill="${tone}"/>`;
-    s += t(x + 32, y + 25, title, { size: 12.5, weight: 600 });
-    s += t(x + colW - 18, y + 25, String(count), { size: 11, mono: true, fill: C.faint, anchor: 'end' });
-    s += line(x, y + 38, x + colW, y + 38, C.ruleSoft);
+  const gap = 18;
+  const colW = (CW_L - gap * 2) / 3;
+  const y = TOPBAR_L + 30;
+  const colH = H - y - 34;
 
-    let cy = y + 52;
+  colTitles.forEach(([title, count, tone], ci) => {
+    const x = CX_L + ci * (colW + gap);
+    s += rect(x, y, colW, colH, { r: 14, fill: C.white, stroke: C.rule });
+    s += `<circle cx="${x + 28}" cy="${y + 34}" r="6" fill="${tone}"/>`;
+    s += t(x + 46, y + 41, title, { size: TT.body, weight: 600 });
+    s += t(x + colW - 24, y + 41, String(count), {
+      size: TT.meta,
+      mono: true,
+      fill: C.faint,
+      anchor: 'end',
+    });
+    s += line(x, y + 60, x + colW, y + 60, C.ruleSoft);
+
+    let cy = y + 78;
     for (const [name, kw, vol] of cards[ci]) {
-      s += rect(x + 12, cy, colW - 24, 92, { r: 8, fill: C.paper, stroke: C.rule });
-      // wrap title to two lines at ~30 chars
-      const words = name.split(' ');
-      let l1 = '';
-      let l2 = '';
-      for (const w of words) (l1.length + w.length < 30 ? (l1 += (l1 ? ' ' : '') + w) : (l2 += (l2 ? ' ' : '') + w));
-      s += t(x + 26, cy + 24, l1, { size: 12, weight: 550 });
-      if (l2) s += t(x + 26, cy + 39, l2, { size: 12, weight: 550 });
-      s += t(x + 26, cy + (l2 ? 57 : 44), kw, { size: 10, mono: true, fill: C.accentStrong });
-      s += rect(x + 24, cy + 66, 62, 18, { r: 9, fill: C.accentSoft });
-      s += t(x + 32, cy + 79, vol, { size: 9.5, mono: true, weight: 600, fill: C.accentStrong });
-      if (ci === 2) s += pill(x + 94, cy + 66, 'Briefed', 'scheduled');
-      if (ci === 1) s += pill(x + 94, cy + 66, 'Ready', 'review');
-      cy += 104;
+      const cardW = colW - 28;
+      s += rect(x + 14, cy, cardW, 138, { r: 12, fill: C.paper, stroke: C.rule });
+      const lines = wrap(name, 22);
+      lines.forEach((l, i) => {
+        s += t(x + 30, cy + 36 + i * 27, l, { size: TT.body, weight: 550 });
+      });
+      s += t(x + 30, cy + 36 + lines.length * 27 + 6, fit(kw, cardW - 32, TT.meta, true), {
+        size: TT.meta,
+        mono: true,
+        fill: C.accentStrong,
+      });
+      s += rect(x + 28, cy + 96, 84, 34, { r: 17, fill: C.accentSoft });
+      s += t(x + 42, cy + 118, vol, { size: TT.micro, mono: true, weight: 600, fill: C.accentStrong });
+      if (ci === 2) s += pill(x + 122, cy + 96, 'Briefed', 'scheduled', PK);
+      if (ci === 1) s += pill(x + 122, cy + 96, 'Ready', 'review', PK);
+      cy += 154;
     }
     if (ci === 1) {
-      s += rect(x + 12, cy, colW - 24, 44, { r: 8, fill: C.white, stroke: C.rule });
-      s += t(x + colW / 2, cy + 27, '+  Bulk brief from spreadsheet', {
-        size: 11,
+      s += rect(x + 14, cy, colW - 28, 62, { r: 12, fill: C.white, stroke: C.rule });
+      s += t(x + colW / 2, cy + 38, '+  Bulk brief from spreadsheet', {
+        size: TT.body,
         weight: 550,
         fill: C.accent,
         anchor: 'middle',
       });
     }
   });
-  return frame('ideas', 'ContentLineup — Ideas', s);
+  return frameL('ideas', 'ContentLineup — Ideas', s);
 };
 
 // ---------------------------------------------------------------------------
 // CALENDAR
 // ---------------------------------------------------------------------------
 const calendar = () => {
-  let s = topbar('Calendar', 'September 2026 · 11 scheduled · 2 empty weeks flagged', 'Schedule post');
+  let s = topbarL('Calendar', 'September 2026 · 8 scheduled · runway flagged', 'Schedule post');
 
-  const y0 = TOPBAR + 26;
-  s += rect(CX, y0, CW, 40, { r: 10, fill: C.white, stroke: C.rule });
-  s += t(CX + 18, y0 + 25, 'September 2026', { size: 14, weight: 600, serif: true });
-  s += t(CX + 160, y0 + 25, '‹    ›', { size: 13, fill: C.faint });
+  const y0 = TOPBAR_L + 30;
+  s += rect(CX_L, y0, CW_L, 60, { r: 14, fill: C.white, stroke: C.rule });
+  s += t(CX_L + 26, y0 + 38, 'September 2026', { size: TT.h2, weight: 600, serif: true });
+  s += t(CX_L + 232, y0 + 38, '‹    ›', { size: TT.h2, fill: C.faint });
   // The legend borrows the status pill's vocabulary — same dot, same uppercase
   // mono label, same colours — so a state reads identically here, in the pills
   // on the other screens, and in the HTML lists on the marketing pages.
   ['Draft', 'Scheduled', 'Published'].forEach((l, i) => {
-    const lx = CX + CW - 340 + i * 112;
-    const [dot, fg] = [
-      [C.muted, C.muted],
-      [C.sched, C.sched],
-      [C.green, C.green],
-    ][i];
-    s += `<circle cx="${lx}" cy="${y0 + 20}" r="2.5" fill="${dot}"/>`;
-    s += t(lx + 9, y0 + 23.6, l.toUpperCase(), {
-      size: 9.5,
+    const lx = CX_L + CW_L - 430 + i * 150;
+    const fg = [C.muted, C.sched, C.green][i];
+    s += `<circle cx="${lx}" cy="${y0 + 31}" r="4.5" fill="${fg}"/>`;
+    s += t(lx + 16, y0 + 37, l.toUpperCase(), {
+      size: TT.micro,
       weight: 700,
       fill: fg,
       mono: true,
-      spacing: 0.5,
+      spacing: 0.9,
     });
   });
 
-  const gy = y0 + 52;
-  const cellW = CW / 7;
+  /* Weekdays only, four weeks.
+
+     The dense version of this screen drew all seven columns and five rows. At
+     tour size a seventh of the board is 126px, and an event title set large
+     enough to read does not fit in it. Nothing is lost by dropping Sat/Sun: a
+     publishing calendar schedules on working days, and the two empty weekend
+     columns were the least informative part of the grid. */
+  const gy = y0 + 76;
+  const cols = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
+  const cellW = CW_L / cols.length;
   const cellH = 118;
-  ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].forEach((d, i) => {
-    s += t(CX + i * cellW + 12, gy - 8, d, { size: 8.5, weight: 700, fill: C.faint, spacing: 0.7 });
+  const rows = 4;
+  cols.forEach((d, i) => {
+    s += t(CX_L + i * cellW + 18, gy - 12, d, { size: TT.micro, weight: 700, fill: C.faint, spacing: 1 });
   });
 
+  // Sep 2026 opens on a Tuesday, so the first Monday cell is empty.
+  const dayAt = (r, c) => {
+    const n = r * 7 + c - 1 + 1;
+    return n >= 1 && n <= 30 ? n : null;
+  };
   const events = {
-    2: [['Winter HVAC checklist', 'scheduled', '09:00']],
-    5: [['Service frequency', 'scheduled', '09:00']],
-    9: [['Heat pump vs furnace', 'review', '09:00']],
-    12: [['Full tune-up scope', 'draft', '09:00']],
-    16: [['Duct leak signs', 'scheduled', '09:00']],
-    19: [['Autumn filter guide', 'scheduled', '09:00']],
-    23: [['Smart thermostat ROI', 'scheduled', '09:00']],
-    26: [['Air quality guide', 'scheduled', '09:00']],
-    30: [['Q4 kickoff post', 'draft', '09:00']],
+    2: ['Winter checklist', 'scheduled', '09:00'],
+    4: ['Service frequency', 'scheduled', '09:00'],
+    9: ['Heat pump vs gas', 'review', '09:00'],
+    11: ['Tune-up scope', 'draft', '09:00'],
+    16: ['Duct leak signs', 'scheduled', '09:00'],
+    18: ['Autumn filter', 'scheduled', '09:00'],
+    23: ['Thermostat ROI', 'scheduled', '09:00'],
+    25: ['Air quality guide', 'scheduled', '09:00'],
   };
 
-  s += rect(CX, gy, CW, cellH * 5, { r: 10, fill: C.white, stroke: C.rule });
-  for (let r = 0; r < 5; r++) {
-    for (let c = 0; c < 7; c++) {
-      const day = r * 7 + c - 1; // Sep 2026 starts Tuesday
-      const x = CX + c * cellW;
+  s += rect(CX_L, gy, CW_L, cellH * rows, { r: 14, fill: C.white, stroke: C.rule });
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols.length; c++) {
+      const day = dayAt(r, c);
+      const x = CX_L + c * cellW;
       const y = gy + r * cellH;
-      if (c) s += line(x, y + 4, x, y + cellH - 4, C.ruleSoft);
+      if (c) s += line(x, y + 6, x, y + cellH - 6, C.ruleSoft);
       if (r) s += line(x, y, x + cellW, y, C.ruleSoft);
-      if (day < 1 || day > 30) continue;
-      const isWeekend = c > 4;
-      if (isWeekend) s += rect(x + 1, y + 1, cellW - 2, cellH - 2, { r: 0, fill: C.paper, opacity: 0.7 });
-      s += t(x + 12, y + 20, String(day), {
-        size: 11,
+      if (!day) continue;
+      s += t(x + 18, y + 30, String(day), {
+        size: TT.meta,
         mono: true,
         weight: day === 2 ? 700 : 400,
         fill: day === 2 ? C.accent : C.faint,
       });
       const ev = events[day];
       if (!ev) continue;
-      let ey = y + 30;
-      for (const [name, tone, time] of ev) {
-        const bg = { scheduled: C.schedSoft, draft: C.cream, review: C.amberSoft }[tone];
-        const fg = { scheduled: C.sched, draft: C.muted, review: C.amber }[tone];
-        s += rect(x + 8, ey, cellW - 16, 52, { r: 6, fill: bg });
-        s += rect(x + 8, ey, 3, 52, { r: 2, fill: fg });
-        const words = name.split(' ');
-        let l1 = '';
-        let l2 = '';
-        for (const w of words) (l1.length + w.length < 17 ? (l1 += (l1 ? ' ' : '') + w) : (l2 += (l2 ? ' ' : '') + w));
-        s += t(x + 17, ey + 16, l1, { size: 9.8, weight: 600, fill: fg });
-        if (l2) s += t(x + 17, ey + 28, l2, { size: 9.8, weight: 600, fill: fg });
-        s += t(x + 17, ey + (l2 ? 43 : 32), time, { size: 9, mono: true, fill: fg, opacity: 0.7 });
-        ey += 56;
-      }
+      const [name, tone, time] = ev;
+      const bg = { scheduled: C.schedSoft, draft: C.cream, review: C.amberSoft }[tone];
+      const fg = { scheduled: C.sched, draft: C.muted, review: C.amber }[tone];
+      const ey = y + 38;
+      const cardW = cellW - 24;
+      s += rect(x + 12, ey, cardW, 74, { r: 9, fill: bg });
+      s += rect(x + 12, ey, 4, 74, { r: 2, fill: fg });
+      wrap(name, 13).forEach((l, i) => {
+        s += t(x + 26, ey + 26 + i * 22, l, { size: TT.meta, weight: 600, fill: fg });
+      });
+      s += t(x + 26, ey + 66, time, { size: TT.micro, mono: true, fill: fg });
     }
   }
-  // empty-week flag
-  s += rect(CX + 12, gy + cellH * 5 + 14, CW - 24, 40, { r: 8, fill: C.amberSoft });
-  s += t(CX + 30, gy + cellH * 5 + 39, '⚠  Week of 21 Sep has one scheduled post. Queue runway drops below 14 days on 28 Sep.', {
-    size: 11,
+
+  const fy = gy + cellH * rows + 18;
+  s += rect(CX_L, fy, CW_L, 56, { r: 12, fill: C.amberSoft });
+  s += t(CX_L + 26, fy + 35, '⚠   Queue runway drops below 14 days on 28 Sep.', {
+    size: TT.body,
     weight: 500,
     fill: C.amber,
   });
-  return frame('calendar', 'ContentLineup — Calendar', s);
+  return frameL('calendar', 'ContentLineup — Calendar', s);
 };
 
 // ---------------------------------------------------------------------------
@@ -608,96 +792,118 @@ const list = () => {
 // APPROVALS
 // ---------------------------------------------------------------------------
 const approvals = () => {
-  let s = topbar('Approvals', '3 drafts waiting · reviewer: Dana Reyes', 'Share review link');
+  let s = topbarL('Approvals', '3 drafts waiting · reviewer: Dana Reyes', 'Share review link');
 
-  const y0 = TOPBAR + 26;
-  const leftW = 380;
+  const y0 = TOPBAR_L + 30;
+  const leftW = 330;
+  const panelH = H - y0 - 34;
 
-  // queue list
-  s += rect(CX, y0, leftW, H - y0 - 30, { r: 10, fill: C.white, stroke: C.rule });
-  s += t(CX + 18, y0 + 26, 'Waiting for review', { size: 12.5, weight: 600 });
-  s += line(CX, y0 + 40, CX + leftW, y0 + 40, C.ruleSoft);
+  /* ---- the queue ---- */
+  s += rect(CX_L, y0, leftW, panelH, { r: 14, fill: C.white, stroke: C.rule });
+  s += t(CX_L + 26, y0 + 40, 'Waiting for review', { size: TT.body, weight: 600 });
+  s += line(CX_L, y0 + 60, CX_L + leftW, y0 + 60, C.ruleSoft);
   const queue = [
-    ['Heat pump vs furnace in a dry climate', 'Submitted 2h ago · Iman', true],
-    ['Signs your ducts are leaking air', 'Submitted yesterday · Iman', false],
-    ['Autumn filter replacement guide', 'Submitted 2 days ago · Dana', false],
+    ['Heat pump vs furnace in a dry climate', '2h ago · Iman', true],
+    ['Signs your ducts are leaking air', 'Yesterday · Iman', false],
+    ['Autumn filter replacement guide', '2 days ago · Dana', false],
   ];
-  let qy = y0 + 52;
+  let qy = y0 + 78;
   queue.forEach(([name, meta, active]) => {
     if (active) {
-      s += rect(CX + 8, qy, leftW - 16, 74, { r: 8, fill: C.accentSoft });
-      s += rect(CX + 8, qy + 14, 3, 46, { r: 2, fill: C.accent });
+      s += rect(CX_L + 10, qy, leftW - 20, 112, { r: 12, fill: C.accentSoft });
+      s += rect(CX_L + 10, qy + 20, 4, 72, { r: 2, fill: C.accent });
     }
-    const words = name.split(' ');
-    let l1 = '';
-    let l2 = '';
-    for (const w of words) (l1.length + w.length < 34 ? (l1 += (l1 ? ' ' : '') + w) : (l2 += (l2 ? ' ' : '') + w));
-    s += t(CX + 26, qy + 26, l1, { size: 12, weight: 600, fill: active ? C.accentStrong : C.ink });
-    if (l2) s += t(CX + 26, qy + 41, l2, { size: 12, weight: 600, fill: active ? C.accentStrong : C.ink });
-    s += t(CX + 26, qy + (l2 ? 58 : 44), meta, { size: 10, fill: C.faint, mono: true });
-    qy += 84;
+    const lines = wrap(name, 24);
+    lines.forEach((l, i) => {
+      s += t(CX_L + 32, qy + 38 + i * 26, l, {
+        size: TT.body,
+        weight: 600,
+        fill: active ? C.accentStrong : C.ink,
+      });
+    });
+    s += t(CX_L + 32, qy + 38 + lines.length * 26 + 8, meta, {
+      size: TT.meta,
+      fill: C.faint,
+      mono: true,
+    });
+    qy += 126;
   });
 
-  // review pane
-  const px = CX + leftW + 16;
-  const pw = CW - leftW - 16;
-  s += rect(px, y0, pw, H - y0 - 30, { r: 10, fill: C.white, stroke: C.rule });
-  s += t(px + 22, y0 + 30, 'Heat pump vs furnace in a dry climate', { size: 14.5, weight: 600, serif: true });
-  s += t(px + 22, y0 + 48, '1,780 words · 6 sections · 1 featured + 4 inline images', {
-    size: 10.5,
+  /* ---- the review pane ---- */
+  const px = CX_L + leftW + 20;
+  const pw = CW_L - leftW - 20;
+  s += rect(px, y0, pw, panelH, { r: 14, fill: C.white, stroke: C.rule });
+  s += t(px + 28, y0 + 44, 'Heat pump vs furnace in a dry climate', {
+    size: TT.h2,
+    weight: 600,
+    serif: true,
+  });
+  s += t(px + 28, y0 + 72, '1,780 words · 6 sections · 5 images', {
+    size: TT.meta,
     fill: C.faint,
     mono: true,
   });
-  s += line(px, y0 + 62, px + pw, y0 + 62, C.ruleSoft);
+  s += line(px, y0 + 92, px + pw, y0 + 92, C.ruleSoft);
 
-  // document preview
-  const dx = px + 22;
-  let dy = y0 + 86;
-  s += t(dx, dy, 'H2  Which actually costs less to run?', { size: 11.5, weight: 600, fill: C.accentStrong });
-  dy += 18;
-  for (const w of [0.96, 0.92, 0.99, 0.62]) {
-    s += rect(dx, dy, (pw - 44) * w, 7, { r: 4, fill: C.cream });
-    dy += 14;
+  // The body of the draft is drawn as bars rather than set as tiny text. Real
+  // sentences at this scale would be texture pretending to be words; bars are
+  // texture that admits it, and they read as a document from further away.
+  const dx = px + 28;
+  const dw = pw - 56;
+  let dy = y0 + 128;
+  s += t(dx, dy, 'H2   Which actually costs less to run?', {
+    size: TT.body,
+    weight: 600,
+    fill: C.accentStrong,
+  });
+  dy += 26;
+  for (const w of [0.96, 0.92, 0.62]) {
+    s += rect(dx, dy, dw * w, 10, { r: 5, fill: C.cream });
+    dy += 20;
   }
-  dy += 8;
-  s += rect(dx, dy, pw - 44, 76, { r: 8, fill: C.paper, stroke: C.rule });
-  s += t(dx + 14, dy + 20, 'Comparison table · 4 rows', { size: 10, mono: true, fill: C.faint });
-  for (let i = 0; i < 3; i++) {
-    s += rect(dx + 14, dy + 30 + i * 14, (pw - 72) * 0.9, 6, { r: 3, fill: C.cream });
+  dy += 14;
+  s += rect(dx, dy, dw, 84, { r: 10, fill: C.paper, stroke: C.rule });
+  s += t(dx + 20, dy + 30, 'Comparison table · 4 rows', { size: TT.meta, mono: true, fill: C.faint });
+  for (let i = 0; i < 2; i++) {
+    s += rect(dx + 20, dy + 44 + i * 18, (dw - 60) * 0.9, 9, { r: 4, fill: C.cream });
   }
-  dy += 92;
-  s += t(dx, dy, 'H3  What changes in a dry climate', { size: 11.5, weight: 600, fill: C.accentStrong });
-  dy += 18;
-  for (const w of [0.94, 0.88]) {
-    s += rect(dx, dy, (pw - 44) * w, 7, { r: 4, fill: C.cream });
-    dy += 14;
-  }
+  dy += 100;
 
-  // revision chat
-  const chy = H - 224;
-  s += line(px, chy - 14, px + pw, chy - 14, C.ruleSoft);
-  s += t(px + 22, chy + 4, 'REVISION REQUESTS', { size: 8.5, weight: 700, fill: C.faint, spacing: 0.7 });
-  s += rect(px + 22, chy + 14, pw - 44, 44, { r: 8, fill: C.paper, stroke: C.rule });
-  s += avatar(px + 32, chy + 25, 'DR', C.cream, C.muted, 10);
-  s += t(px + 58, chy + 33, 'Make the opening two sentences shorter.', { size: 11, fill: C.muted });
-  s += t(px + 58, chy + 47, 'Applied to section 1 · 4 min ago', { size: 9.5, mono: true, fill: C.faint });
+  /* ---- revision requests, in plain language ---- */
+  s += t(dx, dy, 'REVISION REQUESTS', { size: TT.micro, weight: 700, fill: C.faint, spacing: 1 });
+  dy += 14;
+  const notes = [
+    ['Make the opening two sentences shorter.', 'Applied to section 1 · 4 min ago'],
+    ['Add a comparison table for running costs.', 'Applied to section 3 · 2 min ago'],
+  ];
+  notes.forEach(([txt, meta]) => {
+    s += rect(dx, dy, dw, 68, { r: 10, fill: C.paper, stroke: C.rule });
+    s += avatar(dx + 16, dy + 16, 'DR', C.cream, C.muted, 16, 15);
+    s += t(dx + 60, dy + 30, txt, { size: TT.meta, fill: C.muted });
+    s += t(dx + 60, dy + 54, meta, { size: TT.micro, mono: true, fill: C.faint });
+    dy += 74;
+  });
+  s += rect(dx, dy, dw, 50, { r: 10, fill: C.white, stroke: C.rule });
+  s += t(dx + 20, dy + 32, 'Ask for a change in plain language…', { size: TT.meta, fill: C.faint });
 
-  s += rect(px + 22, chy + 68, pw - 44, 44, { r: 8, fill: C.paper, stroke: C.rule });
-  s += avatar(px + 32, chy + 79, 'DR', C.cream, C.muted, 10);
-  s += t(px + 58, chy + 87, 'Add a comparison table for running costs.', { size: 11, fill: C.muted });
-  s += t(px + 58, chy + 101, 'Applied to section 3 · 2 min ago', { size: 9.5, mono: true, fill: C.faint });
+  /* ---- the decision ---- */
+  s += t(dx, H - 104, 'Publishes 2026-09-09 09:00', { size: TT.meta, mono: true, fill: C.sched });
+  s += rect(dx, H - 92, 224, 44, { r: 10, fill: C.accent });
+  s += t(dx + 112, H - 62, 'Approve & schedule', {
+    size: TT.body,
+    weight: 600,
+    fill: C.white,
+    anchor: 'middle',
+  });
+  s += rect(dx + 240, H - 92, 190, 44, { r: 10, fill: C.white, stroke: C.rule });
+  s += t(dx + 335, H - 62, 'Request changes', {
+    size: TT.body,
+    weight: 550,
+    fill: C.muted,
+    anchor: 'middle',
+  });
 
-  s += rect(px + 22, chy + 124, pw - 44, 36, { r: 8, fill: C.white, stroke: C.rule });
-  s += t(px + 36, chy + 147, 'Ask for a change in plain language…', { size: 11, fill: C.faint });
-
-  // actions
-  s += rect(px + 22, H - 66, 148, 34, { r: 8, fill: C.accent });
-  s += t(px + 96, H - 44, 'Approve & schedule', { size: 11.5, weight: 600, fill: C.white, anchor: 'middle' });
-  s += rect(px + 180, H - 66, 128, 34, { r: 8, fill: C.white, stroke: C.rule });
-  s += t(px + 244, H - 44, 'Request changes', { size: 11.5, weight: 550, fill: C.muted, anchor: 'middle' });
-  s += t(px + pw - 22, H - 44, 'Publishes 2026-09-09 09:00', { size: 10.5, mono: true, fill: C.sched, anchor: 'end' });
-
-  return frame('approvals', 'ContentLineup — Approvals', s);
+  return frameL('approvals', 'ContentLineup — Approvals', s);
 };
 
 // ---------------------------------------------------------------------------
@@ -1278,213 +1484,243 @@ const accounts = () => {
 // EDITOR — write it yourself, or ask the AI; revisions are a conversation
 // ---------------------------------------------------------------------------
 const editor = () => {
-  let s = topbar('Editor', 'Bloom Studio · Wedding season 2026 · draft', 'Save & schedule');
+  let s = topbarL('Editor', 'Bloom Studio · Wedding season 2026 · draft', 'Save & schedule');
 
-  const y0 = TOPBAR + 22;
-  const docW = CW * 0.615;
-  const px = CX + docW + 16;
-  const pw = CW - docW - 16;
+  const y0 = TOPBAR_L + 26;
+  const docW = 530;
+  const px = CX_L + docW + 20;
+  const pw = CW_L - docW - 20;
 
-  /* ---- mode toggle: AI or manual, and the AI is not compulsory ----
-     Type through this whole screen is sized for the tour frame, which shows the
-     full 1240px board inside ~664px — a 0.54 fit scale. Everything here is set
-     roughly 1.4x its natural size so it survives that reduction; the containers
-     are sized to the enlarged text rather than the other way round. */
-  s += rect(CX, y0, docW, 44, { r: 10, fill: C.white, stroke: C.rule });
-  s += rect(CX + 8, y0 + 8, 156, 30, { r: 7, fill: C.accent });
-  s += t(CX + 86, y0 + 28, 'Generate with AI', { size: 14.5, weight: 700, fill: C.white, anchor: 'middle' });
-  s += t(CX + 250, y0 + 28, 'Write manually', { size: 14.5, weight: 600, fill: C.subtle, anchor: 'middle' });
-  s += t(CX + docW - 16, y0 + 28, 'Draft · autosaved 12s ago', { size: 12, mono: true, fill: C.faint, anchor: 'end' });
+  /* ---- mode toggle: AI or manual, and the AI is not compulsory ---- */
+  s += rect(CX_L, y0, docW, 56, { r: 12, fill: C.white, stroke: C.rule });
+  s += rect(CX_L + 10, y0 + 10, 200, 36, { r: 9, fill: C.accent });
+  s += t(CX_L + 110, y0 + 34, 'Generate with AI', {
+    size: TT.body,
+    weight: 700,
+    fill: C.white,
+    anchor: 'middle',
+  });
+  s += t(CX_L + 234, y0 + 34, 'Write manually', { size: TT.body, weight: 600, fill: C.subtle });
 
   /* ---- the document ---- */
-  const dy0 = y0 + 56;
-  s += rect(CX, dy0, docW, H - dy0 - 26, { r: 10, fill: C.white, stroke: C.rule });
-  const dx = CX + 26;
+  const dy0 = y0 + 68;
+  s += rect(CX_L, dy0, docW, H - dy0 - 30, { r: 12, fill: C.white, stroke: C.rule });
+  const dx = CX_L + 26;
   const dw = docW - 52;
 
-  s += t(dx, dy0 + 40, 'How to Choose a Wedding Florist:', { size: 23, weight: 700, serif: true, spacing: -0.4 });
-  s += t(dx, dy0 + 70, '9 Questions to Ask First', { size: 23, weight: 700, serif: true, spacing: -0.4 });
-  s += t(dx, dy0 + 96, 'choosing a wedding florist  ·  1,480 words  ·  6 sections', {
-    size: 12,
+  s += t(dx, dy0 + 44, 'How to Choose a Wedding', { size: 28, weight: 700, serif: true, spacing: -0.5 });
+  s += t(dx, dy0 + 78, 'Florist: 9 Questions First', { size: 28, weight: 700, serif: true, spacing: -0.5 });
+  s += t(dx, dy0 + 108, 'choosing a wedding florist · 1,480 words', {
+    size: TT.meta,
     weight: 500,
     mono: true,
     fill: C.accentStrong,
   });
-  s += line(CX, dy0 + 112, CX + docW, dy0 + 112, C.ruleSoft);
+  s += line(CX_L, dy0 + 126, CX_L + docW, dy0 + 126, C.ruleSoft);
 
-  // the section currently being revised
-  s += rect(dx - 12, dy0 + 124, dw + 24, 108, { r: 8, fill: C.accentSoft, opacity: 0.55 });
-  s += rect(dx - 12, dy0 + 124, 3, 108, { r: 2, fill: C.accent });
-  s += t(dx, dy0 + 148, 'Introduction', { size: 12, weight: 700, mono: true, fill: C.accentStrong, spacing: 0.6 });
-  s += t(dx, dy0 + 172, 'Most couples book a florist before they know what to ask.', {
-    size: 15.5,
-    weight: 650,
+  // The section currently being revised.
+  s += rect(dx - 12, dy0 + 142, dw + 24, 96, { r: 10, fill: C.accentSoft, opacity: 0.55 });
+  s += rect(dx - 12, dy0 + 142, 4, 96, { r: 2, fill: C.accent });
+  s += t(dx, dy0 + 170, 'INTRODUCTION', {
+    size: TT.micro,
+    weight: 700,
+    mono: true,
+    fill: C.accentStrong,
+    spacing: 1,
   });
-  s += t(dx, dy0 + 194, 'These nine questions decide whether the flowers survive the day —', { size: 15.5, weight: 550, fill: C.muted });
-  s += t(dx, dy0 + 216, 'and whether the quote you signed is the one you pay.', { size: 15.5, weight: 550, fill: C.muted });
+  wrap('Most couples book a florist before they know what to ask.', 41, 3).forEach((l, i) => {
+    s += t(dx, dy0 + 200 + i * 26, l, { size: TT.body, weight: 600 });
+  });
 
-  // rest of the document, rendered as structure
-  let by = dy0 + 254;
+  // The rest of the draft is structure, not text: bars read as a document at
+  // this size, where sentences would only read as noise.
+  let by = dy0 + 272;
   const para = (widths) => {
     for (const w of widths) {
-      s += rect(dx, by, dw * w, 8, { r: 4, fill: C.cream });
-      by += 16;
+      s += rect(dx, by, dw * w, 10, { r: 5, fill: C.cream });
+      by += 20;
     }
-    by += 10;
+    by += 12;
   };
-  s += t(dx, by, 'H2   What does “full service” actually include?', { size: 15, weight: 700, fill: C.ink });
-  by += 24;
-  para([0.97, 0.93, 0.99, 0.55]);
+  s += t(dx, by, 'H2   What does “full service” include?', { size: TT.body, weight: 700 });
+  by += 26;
+  para([0.97, 0.93, 0.55]);
 
-  // an inline image with its generated alt text
-  s += rect(dx, by, dw, 78, { r: 8, fill: C.peach });
-  s += `<path d="M${dx} ${by + 58} l${dw * 0.26} -23 l${dw * 0.2} 13 l${dw * 0.24} -19 l${dw * 0.3} 29 Z" fill="${C.ink}" opacity="0.12"/>`;
-  s += `<circle cx="${dx + dw - 46}" cy="${by + 24}" r="15" fill="${C.white}" opacity="0.55"/>`;
-  s += rect(dx + 10, by + 52, 200, 22, { r: 11, fill: C.white, opacity: 0.92 });
-  s += t(dx + 22, by + 67, 'alt text written · 1 of 4', { size: 11, weight: 500, mono: true, fill: C.muted });
-  // Clear of the image, not tucked against it — the heading below is the start
-  // of a new section, so it needs the gap to read as one.
-  by += 106;
+  // An inline image with its generated alt text.
+  s += rect(dx, by, dw, 88, { r: 10, fill: C.peach });
+  s += `<path d="M${dx} ${by + 66} l${dw * 0.26} -26 l${dw * 0.2} 15 l${dw * 0.24} -21 l${
+    dw * 0.3
+  } 32 Z" fill="${C.ink}" opacity="0.12"/>`;
+  s += `<circle cx="${dx + dw - 56}" cy="${by + 28}" r="17" fill="${C.white}" opacity="0.55"/>`;
+  s += rect(dx + 12, by + 56, 250, 26, { r: 13, fill: C.white, opacity: 0.92 });
+  s += t(dx + 26, by + 74, 'alt text written · 1 of 4', {
+    size: TT.micro,
+    weight: 500,
+    mono: true,
+    fill: C.muted,
+  });
+  by += 112;
 
-  s += t(dx, by, 'H2   Nine questions to ask at the first meeting', { size: 15, weight: 700, fill: C.ink });
-  by += 24;
-  para([0.95, 0.88]);
-
-  s += rect(dx, by, dw, 94, { r: 8, fill: C.paper, stroke: C.rule });
-  s += t(dx + 16, by + 24, 'FAQ BLOCK · 4 questions', { size: 11, weight: 700, mono: true, fill: C.faint, spacing: 0.6 });
-  ['H3  How far ahead should we book?', 'H3  What happens if a flower is out of season?'].forEach((q, k) => {
-    s += t(dx + 16, by + 50 + k * 22, q, { size: 13, weight: 650, fill: C.subtle });
+  s += t(dx, by, 'H2   Nine questions to ask first', { size: TT.body, weight: 700 });
+  by += 22;
+  s += rect(dx, by, dw, 58, { r: 10, fill: C.paper, stroke: C.rule });
+  s += t(dx + 18, by + 22, 'FAQ BLOCK · 4 questions', {
+    size: TT.micro,
+    weight: 700,
+    mono: true,
+    fill: C.faint,
+    spacing: 1,
+  });
+  s += t(dx + 18, by + 46, 'H3  How far ahead should we book?', {
+    size: TT.meta,
+    weight: 600,
+    fill: C.subtle,
   });
 
   /* ---- AI assist rail ---- */
-  s += rect(px, y0, pw, H - y0 - 26, { r: 10, fill: C.white, stroke: C.rule });
-  s += t(px + 20, y0 + 32, 'AI assist', { size: 16.5, weight: 700, serif: true });
-  s += t(px + 20, y0 + 54, 'Scoped to the selected section', { size: 12.5, weight: 500, fill: C.faint });
-  s += pill(px + pw - 92, y0 + 14, 'Optional', 'draft');
-  s += line(px, y0 + 70, px + pw, y0 + 70, C.ruleSoft);
+  s += rect(px, y0, pw, H - y0 - 30, { r: 12, fill: C.white, stroke: C.rule });
+  s += t(px + 24, y0 + 40, 'AI assist', { size: TT.h2, weight: 700, serif: true });
+  s += t(px + 24, y0 + 66, 'Scoped to the selection', { size: TT.meta, weight: 500, fill: C.faint });
+  s += pill(px + pw - 130, y0 + 18, 'Optional', 'draft', PK);
+  s += line(px, y0 + 84, px + pw, y0 + 84, C.ruleSoft);
 
-  s += t(px + 20, y0 + 96, 'SELECTED', { size: 10.5, weight: 700, fill: C.faint, spacing: 0.7 });
-  s += rect(px + 20, y0 + 104, pw - 40, 38, { r: 7, fill: C.accentSoft });
-  s += t(px + 32, y0 + 128, 'Introduction', { size: 14, weight: 700, fill: C.accentStrong });
+  s += t(px + 24, y0 + 112, 'SELECTED', { size: TT.micro, weight: 700, fill: C.faint, spacing: 1 });
+  s += rect(px + 24, y0 + 122, pw - 48, 46, { r: 9, fill: C.accentSoft });
+  s += t(px + 40, y0 + 152, 'Introduction', { size: TT.body, weight: 700, fill: C.accentStrong });
 
-  s += t(px + 20, y0 + 172, 'ASK FOR A CHANGE', { size: 10.5, weight: 700, fill: C.faint, spacing: 0.7 });
-  const asks = ['Make the introduction shorter.', 'Open with the direct answer.', 'Add a comparison table.', 'Rewrite for a first-time buyer.'];
+  s += t(px + 24, y0 + 196, 'ASK FOR A CHANGE', { size: TT.micro, weight: 700, fill: C.faint, spacing: 1 });
+  const asks = ['Make the intro shorter.', 'Open with the answer.', 'Add a comparison table.'];
   asks.forEach((a, i) => {
-    const ay = y0 + 182 + i * 42;
-    s += rect(px + 20, ay, pw - 40, 36, { r: 7, fill: i === 0 ? C.ink : C.paper, stroke: i === 0 ? 'none' : C.rule });
-    s += t(px + 32, ay + 23, a, { size: 13.5, weight: i === 0 ? 700 : 550, fill: i === 0 ? C.white : C.subtle });
+    const ay = y0 + 206 + i * 52;
+    s += rect(px + 24, ay, pw - 48, 44, {
+      r: 9,
+      fill: i === 0 ? C.ink : C.paper,
+      stroke: i === 0 ? 'none' : C.rule,
+    });
+    s += t(px + 40, ay + 29, a, {
+      size: TT.meta,
+      weight: i === 0 ? 700 : 550,
+      fill: i === 0 ? C.white : C.subtle,
+    });
   });
 
-  s += rect(px + 20, y0 + 356, pw - 40, 42, { r: 7, fill: C.white, stroke: C.rule });
-  s += t(px + 32, y0 + 383, 'Or type an instruction…', { size: 13, weight: 500, fill: C.faint });
-
-  s += t(px + 20, y0 + 428, 'APPLIED', { size: 10.5, weight: 700, fill: C.faint, spacing: 0.7 });
+  s += t(px + 24, y0 + 390, 'APPLIED', { size: TT.micro, weight: 700, fill: C.faint, spacing: 1 });
   const applied = [
-    ['Make the introduction shorter.', 'Introduction · just now'],
+    ['Make the intro shorter.', 'Introduction · just now'],
     ['Add a supplier cost table.', 'Section 3 · 6 min ago'],
-    ['Use “stems” not “florals”.', 'Whole draft · 14 min ago'],
   ];
   applied.forEach(([txt, meta], i) => {
-    const ay = y0 + 438 + i * 56;
-    s += rect(px + 20, ay, pw - 40, 48, { r: 7, fill: C.paper, stroke: C.rule });
-    s += `<g transform="translate(${px + 32} ${ay + 15}) scale(0.78)" stroke="${C.green}" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="m2 8.5 4 4 8-9"/></g>`;
-    s += t(px + 58, ay + 21, txt, { size: 13, weight: 650, fill: C.muted });
-    s += t(px + 58, ay + 38, meta, { size: 11, weight: 500, mono: true, fill: C.faint });
+    const ay = y0 + 400 + i * 64;
+    s += rect(px + 24, ay, pw - 48, 56, { r: 9, fill: C.paper, stroke: C.rule });
+    s += `<g transform="translate(${px + 40} ${ay + 17}) scale(1.1)" stroke="${
+      C.green
+    }" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="m2 8.5 4 4 8-9"/></g>`;
+    s += t(px + 70, ay + 25, txt, { size: TT.meta, weight: 650, fill: C.muted });
+    s += t(px + 70, ay + 45, meta, { size: TT.micro, weight: 500, mono: true, fill: C.faint });
   });
 
-  s += line(px, H - 96, px + pw, H - 96, C.ruleSoft);
-  s += t(px + 20, H - 74, 'Every version is kept. Roll back any time.', { size: 12.5, weight: 500, fill: C.faint });
-  s += rect(px + 20, H - 66, pw - 40, 38, { r: 8, fill: C.accent });
-  s += t(px + pw / 2, H - 41, 'Send for approval', { size: 14.5, weight: 700, fill: C.white, anchor: 'middle' });
+  s += t(px + 24, H - 104, 'Every version is kept. Roll back any time.', {
+    size: TT.micro,
+    weight: 500,
+    fill: C.faint,
+  });
+  s += rect(px + 24, H - 92, pw - 48, 46, { r: 10, fill: C.accent });
+  s += t(px + pw / 2, H - 62, 'Send for approval', {
+    size: TT.body,
+    weight: 700,
+    fill: C.white,
+    anchor: 'middle',
+  });
 
-  return frame('editor', 'ContentLineup — Editor', s, WS.bloom);
+  return frameL('editor', 'ContentLineup — Editor', s, WS.bloom);
 };
 
 // ---------------------------------------------------------------------------
 // PUBLISHING — the log of what went out, where, and when
 // ---------------------------------------------------------------------------
 const publishing = () => {
-  let s = topbar('Publishing', 'Live log · all accounts · last 30 days', 'Export log');
+  let s = topbarL('Publishing', 'Live log · all accounts · last 30 days', 'Export log');
 
-  s += stats(TOPBAR + 26, [
+  /* ---- three tiles, not four: a quarter of the board is 221px, and a 40px
+          serif numeral with a label under it needs most of it ---- */
+  const y0 = TOPBAR_L + 30;
+  const tiles = [
     { label: 'Published, 30 days', value: '86', sub: 'blog + social', tone: C.green },
     { label: 'Channels connected', value: '11', sub: 'across 5 accounts' },
-    { label: 'Needs attention', value: '1', sub: 'expired token', tone: C.accent },
-    { label: 'On time', value: '100%', sub: 'of scheduled slots', tone: C.sched, mono: true },
-  ]);
-
-  const y0 = TOPBAR + 138;
-  s += t(CX, y0, 'Publishing log', { size: 14, weight: 600, serif: true });
-  s += t(CX + CW, y0, 'Timezone: America/Phoenix  ·  newest first', {
-    size: 10.5,
-    mono: true,
-    fill: C.faint,
-    anchor: 'end',
+    { label: 'On time', value: '100%', sub: 'of scheduled slots', tone: C.sched },
+  ];
+  const tw = (CW_L - 32) / 3;
+  tiles.forEach((it, i) => {
+    const x = CX_L + i * (tw + 16);
+    s += rect(x, y0, tw, 104, { r: 14, fill: C.white, stroke: C.rule });
+    s += t(x + 24, y0 + 32, it.label.toUpperCase(), {
+      size: TT.micro,
+      weight: 700,
+      fill: C.faint,
+      spacing: 1,
+    });
+    s += t(x + 24, y0 + 72, it.value, { size: 40, weight: 600, serif: true, fill: it.tone || C.ink });
+    s += t(x + 24, y0 + 92, it.sub, { size: TT.meta, fill: C.subtle });
   });
 
+  /* ---- the log ---- */
+  const ly = y0 + 136;
+  s += t(CX_L, ly, 'Publishing log', { size: TT.h2, weight: 600, serif: true });
+  s += t(CX_L + CW_L, ly, 'newest first', { size: TT.meta, mono: true, fill: C.faint, anchor: 'end' });
+
+  // The same article going out on three channels on one date is the whole point
+  // of the screen, so the first three rows are deliberately one piece of content.
   const rows = [
-    ['2026-09-05 09:00', 'How often should you service an HVAC system?', 'Northgate Air', 'Blog', 'Published', 'published', 'northgateair.com/blog/hvac-service…'],
-    ['2026-09-05 09:00', 'How often should you service an HVAC…', 'Northgate Air', 'LinkedIn', 'Published', 'published', 'linkedin.com/company/northgate-air…'],
-    ['2026-09-05 09:00', 'How often should you service an HVAC…', 'Northgate Air', 'Facebook', 'Published', 'published', 'facebook.com/northgateair/posts…'],
-    ['2026-09-04 09:00', 'Onboarding: three weeks to three days', 'Lumen Analytics', 'LinkedIn', 'Published', 'published', 'linkedin.com/company/lumen…'],
-    ['2026-09-03 08:00', 'Seasonal stem guide — September', 'Bloom Studio', 'Instagram', 'Retry sent', 'review', 'token refreshed · retried 08:04'],
-    ['2026-09-02 09:00', 'Winter HVAC maintenance checklist', 'Northgate Air', 'Blog', 'Published', 'published', 'northgateair.com/blog/winter-check…'],
-    ['2026-09-01 10:00', 'Are dental implants worth it?', 'Harbor Dental', 'Facebook', 'Published', 'published', 'facebook.com/harbordental/posts…'],
+    ['2026-09-05 09:00', 'HVAC service guide', 'Northgate Air', 'Blog', 'Published', 'published'],
+    ['2026-09-05 09:00', 'HVAC service guide', 'Northgate Air', 'LinkedIn', 'Published', 'published'],
+    ['2026-09-05 09:00', 'HVAC service guide', 'Northgate Air', 'Facebook', 'Published', 'published'],
+    ['2026-09-04 09:00', 'Onboarding in 3 days', 'Lumen Analytics', 'LinkedIn', 'Published', 'published'],
+    ['2026-09-03 08:00', 'Seasonal stem guide', 'Bloom Studio', 'Instagram', 'Retry sent', 'review'],
+    ['2026-09-02 09:00', 'Winter HVAC checklist', 'Northgate Air', 'Blog', 'Published', 'published'],
   ];
 
-  const ty = y0 + 16;
-  s += rect(CX, ty, CW, 38 + rows.length * 46, { r: 10, fill: C.white, stroke: C.rule });
-  const colX = [CX + 18, CX + 176, CX + 500, CX + 640, CX + 760, CX + 880];
-  ['Published at', 'Content', 'Account', 'Channel', 'Result', 'Where it landed'].forEach((c, i) => {
-    s += t(colX[i], ty + 24, c.toUpperCase(), { size: 8.5, weight: 700, fill: C.faint, spacing: 0.7 });
+  const ty = ly + 20;
+  const rowH = 56;
+  const headH = 44;
+  s += rect(CX_L, ty, CW_L, headH + rows.length * rowH, { r: 14, fill: C.white, stroke: C.rule });
+  const colX = [CX_L + 24, CX_L + 214, CX_L + 474, CX_L + 624, CX_L + 734];
+  const colCap = [190, 250, 150, 100, 0];
+  ['Published at', 'Content', 'Account', 'Channel', 'Result'].forEach((c, i) => {
+    s += t(colX[i], ty + 28, c.toUpperCase(), {
+      size: TT.micro,
+      weight: 700,
+      fill: C.faint,
+      spacing: 1,
+    });
   });
-  s += line(CX, ty + 38, CX + CW, ty + 38, C.rule);
+  s += line(CX_L, ty + headH, CX_L + CW_L, ty + headH, C.rule);
 
-  rows.forEach(([when, title, account, channel, result, tone, url], i) => {
-    const ry = ty + 38 + i * 46;
-    if (i) s += line(CX + 18, ry, CX + CW - 18, ry, C.ruleSoft);
-    if (tone === 'review') s += rect(CX + 1, ry + 1, CW - 2, 44, { r: 0, fill: C.amberSoft, opacity: 0.55 });
-    s += t(colX[0], ry + 28, when, { size: 10.5, mono: true, fill: tone === 'review' ? C.amber : C.sched });
-    const short = title.length > 42 ? title.slice(0, 41) + '…' : title;
-    s += t(colX[1], ry + 28, short, { size: 11.5, weight: 550 });
-    s += t(colX[2], ry + 28, account, { size: 11, fill: C.muted });
-    s += t(colX[3], ry + 28, channel, { size: 11, mono: true, fill: C.subtle });
-    s += pill(colX[4], ry + 18, result, tone);
-    s += t(colX[5], ry + 28, url, { size: 10, mono: true, fill: tone === 'review' ? C.amber : C.accent });
+  rows.forEach(([when, title, account, channel, result, tone], i) => {
+    const ry = ty + headH + i * rowH;
+    if (i) s += line(CX_L + 24, ry, CX_L + CW_L - 24, ry, C.ruleSoft);
+    if (tone === 'review') s += rect(CX_L + 1, ry + 1, CW_L - 2, rowH - 2, { r: 0, fill: C.amberSoft, opacity: 0.55 });
+    const fg = tone === 'review' ? C.amber : C.sched;
+    s += t(colX[0], ry + 35, when, { size: TT.meta, mono: true, fill: fg });
+    s += t(colX[1], ry + 35, fit(title, colCap[1], TT.body), { size: TT.body, weight: 550 });
+    s += t(colX[2], ry + 35, fit(account, colCap[2], TT.meta), { size: TT.meta, fill: C.muted });
+    s += t(colX[3], ry + 35, channel, { size: TT.meta, mono: true, fill: C.subtle });
+    s += pill(colX[4], ry + 17, result, tone, PK);
   });
 
-  const fy = ty + 38 + rows.length * 46 + 16;
-  s += rect(CX, fy, CW, 46, { r: 10, fill: C.schedSoft });
-  s += t(CX + 20, fy + 21, 'Coming soon: WordPress and Payload CMS publishing', {
-    size: 11.5,
+  /* ---- what is live and what is next ---- */
+  const fy = ty + headH + rows.length * rowH + 20;
+  s += rect(CX_L, fy, CW_L, 68, { r: 12, fill: C.schedSoft });
+  s += t(CX_L + 24, fy + 30, 'Coming soon: WordPress and Payload CMS publishing', {
+    size: TT.body,
     weight: 600,
     fill: C.sched,
   });
-  s += t(CX + 20, fy + 36, 'Live today: LinkedIn, Facebook, Instagram, publishing webhooks and the REST API.', {
-    size: 10,
+  s += t(CX_L + 24, fy + 54, 'Live today: LinkedIn, Facebook, Instagram, webhooks and the REST API.', {
+    size: TT.meta,
     fill: C.sched,
   });
 
-  const cy = fy + 60;
-  s += t(CX, cy, 'By channel, last 30 days', { size: 12.5, weight: 600 });
-  const chans = [
-    ['LinkedIn', 31, 0.86, C.sched],
-    ['Facebook', 24, 0.67, C.accent],
-    ['Instagram', 19, 0.53, C.amber],
-    ['Blog (export / API)', 12, 0.33, C.green],
-  ];
-  const bw = (CW - 3 * 14) / 4;
-  chans.forEach(([name, n, pct, tone], i) => {
-    const x = CX + i * (bw + 14);
-    s += rect(x, cy + 12, bw, 62, { r: 10, fill: C.white, stroke: C.rule });
-    s += t(x + 16, cy + 34, name, { size: 11, weight: 550 });
-    s += t(x + bw - 16, cy + 34, String(n), { size: 12, weight: 600, mono: true, fill: tone, anchor: 'end' });
-    s += rect(x + 16, cy + 46, bw - 32, 7, { r: 4, fill: C.cream });
-    s += rect(x + 16, cy + 46, (bw - 32) * pct, 7, { r: 4, fill: tone });
-    s += t(x + 16, cy + 66, 'posts published', { size: 9, fill: C.faint });
-  });
-
-  return frame('publishing', 'ContentLineup — Publishing log', s, WS.meridian);
+  return frameL('publishing', 'ContentLineup — Publishing log', s, WS.meridian);
 };
 
 export const renderers = {

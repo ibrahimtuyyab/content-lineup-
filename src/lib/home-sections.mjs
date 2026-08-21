@@ -170,7 +170,7 @@ export const channelBand = () => `
     <div class="band-inner">
       <div class="band-lede">
         <h2 id="band-h">Publish once.<br>It lands everywhere.</h2>
-        <p>Connect your channels once. Schedule a post to one of them and tick the others to go out at the same time &mdash; one date, one approval, every account. Each channel still gets copy written for it, not the same text pasted three times.</p>
+        <p>Connect your channels once. Give one topic, and tick which platforms should post it &mdash; one date, one approval, every account. Our AI rewrites the wording fresh for each channel every time, so nothing ever reads like the same text pasted three times.</p>
       </div>
       <ul class="band-list">
         ${channels

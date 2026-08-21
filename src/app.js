@@ -16,6 +16,43 @@
     return io;
   };
 
+  /* Coalesces a handler onto the next animation frame.
+
+     A scroll listener that measures the page runs on every scroll event — which
+     can be several per frame — and each measurement forces the browser to flush
+     pending layout before it can answer. That is the layout thrash you see as
+     jitter while scrolling. Wrapping the handler here means it runs at most once
+     per frame, and it runs at the point in the frame where the layout it reads
+     is already up to date. */
+  var onFrame = function (fn) {
+    var queued = false;
+    return function () {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(function () { queued = false; fn(); });
+    };
+  };
+
+  /* Runs `done` when el's own animation finishes.
+
+     Pairing a setTimeout against a duration written in the stylesheet means two
+     copies of the same number, and they drift the moment either side changes;
+     if the timeout is short the class is stripped mid-animation and the card
+     snaps. The event is the real signal. The timer is only a backstop for the
+     case where no animation runs at all (reduced motion, display:none). */
+  var onAnimEnd = function (el, done) {
+    var fired = false;
+    var fire = function (e) {
+      if (fired || (e && e.target !== el)) return;
+      fired = true;
+      el.removeEventListener('animationend', fire);
+      window.clearTimeout(guard);
+      done();
+    };
+    var guard = window.setTimeout(fire, 1200);
+    el.addEventListener('animationend', fire);
+  };
+
   /* ---------- CTA tracking ----------
      One delegated listener for every [data-cta] on the page. The value names
      the placement ("hero", "pricing-team"), because the only question worth
@@ -80,8 +117,11 @@
       }
     };
     onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll, { passive: true });
+    // Reads scrollHeight (a layout flush) and then writes a transform. Doing that
+    // per scroll event thrashes layout; once per frame is all the bar can show.
+    var onScrollFramed = onFrame(onScroll);
+    window.addEventListener('scroll', onScrollFramed, { passive: true });
+    window.addEventListener('resize', onScrollFramed, { passive: true });
   }
 
   /* ---------- mobile nav ---------- */
@@ -119,7 +159,8 @@
       sticky.hidden = !(past && !atEnd);
     };
     stickyScroll();
-    window.addEventListener('scroll', stickyScroll, { passive: true });
+    // getBoundingClientRect forces a layout flush, so this reads once a frame.
+    window.addEventListener('scroll', onFrame(stickyScroll), { passive: true });
   }
 
   /* ---------- hero board: cursor tilt ----------
@@ -179,8 +220,9 @@
       fig.classList.toggle('at-end', canvas.scrollLeft >= over - 2);
     };
     sync();
-    canvas.addEventListener('scroll', sync, { passive: true });
-    window.addEventListener('resize', sync, { passive: true });
+    var syncOnFrame = onFrame(sync);
+    canvas.addEventListener('scroll', syncOnFrame, { passive: true });
+    window.addEventListener('resize', syncOnFrame, { passive: true });
     // Fonts land after first paint and change the measurement.
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(sync);
   });
@@ -226,12 +268,22 @@
 
     var CH_LABEL = { blog: 'Blog', linkedin: 'LinkedIn', facebook: 'Facebook', instagram: 'Instagram' };
 
+    var countEls = {};
+    STAGES.forEach(function (id) {
+      var col = $('.lu-col[data-stage="' + id + '"]', lineup);
+      countEls[id] = col ? $('.lu-count', col) : null;
+    });
+
     var counts = function () {
       STAGES.forEach(function (id) {
-        var col = $('.lu-col[data-stage="' + id + '"]', lineup);
-        if (!col || !slots[id]) return;
-        var n = $('.lu-count', col);
-        if (n) n.textContent = String(slots[id].children.length);
+        if (!countEls[id] || !slots[id]) return;
+        // A card on its way out is position:absolute but still a child, so it
+        // would otherwise keep being counted while it fades.
+        var live = 0;
+        for (var c = slots[id].firstElementChild; c; c = c.nextElementSibling) {
+          if (!c.classList.contains('lu-exit')) live++;
+        }
+        countEls[id].textContent = String(live);
       });
     };
 
@@ -254,19 +306,43 @@
       return el;
     };
 
+    /* Takes a card out of flow at the exact spot it already occupies, so the
+       fade-out costs nothing in layout. One measured read, then one write. */
+    var retire = function (card) {
+      var top = card.offsetTop;
+      var h = card.offsetHeight;
+      card.style.top = top + 'px';
+      card.style.height = h + 'px';
+      card.classList.add('lu-exit');
+      counts();
+      onAnimEnd(card, function () {
+        if (card.parentNode) card.parentNode.removeChild(card);
+      });
+    };
+
     var cursor = 0;
+    // One hop at a time. Without this an interval tick landing on a slow frame
+    // could start a second hop over the first, and the two would fight over the
+    // same card's classes.
+    var moving = false;
+
     var advance = function () {
+      if (moving) return;
       var i = 3 - (cursor % 4);
       var from = slots[STAGES[i]];
       var to = slots[STAGES[i + 1]];
       cursor++;
       if (!from || !to) return;
 
+      // Skip cards already on their way out of the board.
       var card = from.lastElementChild;
+      while (card && card.classList.contains('lu-exit')) card = card.previousElementSibling;
       if (!card) return;
 
+      moving = true;
       card.classList.add('lu-leaving');
-      window.setTimeout(function () {
+
+      onAnimEnd(card, function () {
         card.classList.remove('lu-leaving');
         to.insertBefore(card, to.firstChild);
         card.classList.add('lu-entering');
@@ -274,14 +350,17 @@
           var f = $('.lu-card-foot', card);
           if (f) f.hidden = false;
         }
-        window.setTimeout(function () { card.classList.remove('lu-entering'); }, 520);
+        onAnimEnd(card, function () {
+          card.classList.remove('lu-entering');
+          moving = false;
+        });
 
         // Retire the oldest published card and feed a fresh idea in at the top.
         var pub = slots.published;
-        if (pub && pub.children.length > 3) {
+        if (pub && pub.querySelectorAll('.lu-card:not(.lu-exit)').length > 3) {
           var old = pub.lastElementChild;
-          old.classList.add('lu-exit');
-          window.setTimeout(function () { if (old.parentNode) old.parentNode.removeChild(old); counts(); }, 460);
+          while (old && old.classList.contains('lu-exit')) old = old.previousElementSibling;
+          if (old) retire(old);
         }
         if (STAGES[i] === 'idea' && pool.length) {
           var fresh = makeCard(pool[poolAt % pool.length]);
@@ -289,19 +368,26 @@
           if (fresh && slots.idea) {
             fresh.classList.add('lu-entering');
             slots.idea.appendChild(fresh);
-            window.setTimeout(function () { fresh.classList.remove('lu-entering'); }, 520);
+            onAnimEnd(fresh, function () { fresh.classList.remove('lu-entering'); });
           }
         }
         counts();
-      }, 200);
+      });
     };
 
     var timer = null;
-    var start = function () { if (!timer && !reduced) timer = window.setInterval(advance, 2000); };
+    var inView = false;
+    // Both conditions are checked here rather than at the call sites, because
+    // the visibilitychange handler used to call start() unconditionally and so
+    // restarted the board while it was scrolled well off screen.
+    var start = function () {
+      if (timer || reduced || !inView || document.hidden) return;
+      timer = window.setInterval(advance, 2000);
+    };
     var stop = function () { if (timer) { window.clearInterval(timer); timer = null; } };
 
     if (!reduced) {
-      onView(lineup, function (visible) { visible ? start() : stop(); }, { threshold: 0.25 });
+      onView(lineup, function (visible) { inView = visible; visible ? start() : stop(); }, { threshold: 0.25 });
       document.addEventListener('visibilitychange', function () { document.hidden ? stop() : start(); });
     }
 

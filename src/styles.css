@@ -86,6 +86,11 @@
   --wrap: 1180px;
   --wrap-narrow: 760px;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  /* Board motion. Every card hop, exit and hover on the lineup reads from these
+     two, so nothing on the board can drift out of step with anything else.
+     app.js does not repeat these numbers — it waits on animationend instead. */
+  --lu-move: 460ms;
+  --lu-quick: 200ms;
   --head-h: 68px;
 }
 
@@ -1595,7 +1600,10 @@ table.cmp .dim small {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
-  align-items: start;
+  /* stretch, not start. With `start` each card was only as tall as its own
+     content, so three cards whose feature lists wrap to different line counts
+     ended on three different baselines — a 70px ragged edge at 1440px. */
+  align-items: stretch;
 }
 .plan {
   position: relative;
@@ -1751,7 +1759,7 @@ table.cmp .dim small {
 .plan-sum {
   font-size: 0.9rem;
   color: var(--muted);
-  min-height: 3.6em;
+  min-height: 8em;
 }
 .plan .btn {
   margin: 20px 0;
@@ -1761,6 +1769,7 @@ table.cmp .dim small {
   display: grid;
   gap: 9px;
   padding-top: 18px;
+  margin-bottom: 18px;
   border-top: 1px solid var(--rule);
 }
 .plan-inc li {
@@ -1775,11 +1784,53 @@ table.cmp .dim small {
   font-size: 1.02em;
 }
 .plan-limits {
-  margin-top: 18px;
+  margin-top: auto;
   padding-top: 16px;
   border-top: 1px dashed var(--rule);
   font-size: 0.79rem;
   color: var(--faint);
+}
+
+/* Every row of the three plan cards on one baseline.
+
+   Equal card heights (align-items: stretch, above) fixes the ragged bottom
+   edge, but it cannot line up the rows *inside* the cards: the summary wraps to
+   five lines in one card and six in another, and the CTA under it moves with
+   it. The min-height on .plan-sum is a floor tied to the longest summary at the
+   three-column widths, so it holds down to about 1180px and then gives up.
+
+   Subgrid removes the guess. Each card spans the same eight parent rows and
+   takes its row sizes from the parent, so kicker, heading, price, note,
+   summary, button, feature list and limits each get one shared height across
+   all three cards, at any width. The eight children are the same on every card
+   because the billing toggle hides the inactive .bill-note with display:none,
+   which takes it out of flow rather than leaving an empty row.
+
+   Kept behind @supports: without it the rules above still produce equal-height
+   cards, just with the summary floor doing the internal alignment. */
+@supports (grid-template-rows: subgrid) {
+  .plans {
+    grid-template-rows: repeat(8, auto);
+  }
+  .plan {
+    display: grid;
+    grid-template-rows: subgrid;
+    grid-row: span 8;
+    /* The 20px gap belongs between cards, not between a card's own rows. When
+       the grid drops to one column it still separates the stacked cards,
+       because that gap is the parent's, not the subgrid's. */
+    row-gap: 0;
+  }
+  /* The three props that were standing in for row alignment can stand down. */
+  .plan-sum {
+    min-height: 0;
+  }
+  .plan-inc {
+    margin-bottom: 0;
+  }
+  .plan-limits {
+    margin-top: 18px;
+  }
 }
 
 /* ---------- FAQ accordion ---------- */
@@ -2881,19 +2932,47 @@ table.cmp .dim small {
   display: flex;
   flex-direction: column;
   gap: 9px;
+  /* Positioned so a card on its way out can be lifted out of flow and animated
+     without the cards below it reflowing on every frame. See .lu-exit. */
+  position: relative;
 }
 .lu-card {
+  position: relative;
   background: #fff;
   border: 1px solid var(--rule);
   border-radius: var(--r-item);
   padding: 10px 11px 11px;
   box-shadow: var(--shadow-sm);
-  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), border-color 0.2s var(--ease);
+  /* transform and border-color only. box-shadow used to be in here, and a
+     transitioning shadow repaints the card and everything under it on every
+     frame — inside a board that is itself rotated in 3D, that repaint was the
+     hover flicker. The shadow now lives on ::after and cross-fades instead. */
+  transition: transform var(--lu-quick) var(--ease), border-color var(--lu-quick) var(--ease);
+  /* Stops the card flashing as the board plane rotates under the cursor. */
+  backface-visibility: hidden;
+}
+/* The hover shadow, as its own layer. Fading a ready-made shadow in and out
+   costs one composited opacity change; interpolating box-shadow costs a repaint
+   per frame. -1px so the shadow hugs the border box, not the padding box. */
+.lu-card::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transition: opacity var(--lu-quick) var(--ease);
+  pointer-events: none;
 }
 .lu-card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow);
   border-color: var(--cream-2);
+  /* Lifts the card above the next one down, so its shadow lands on top of that
+     card's white background instead of being painted underneath it. */
+  z-index: 2;
+}
+.lu-card:hover::after {
+  opacity: 1;
 }
 .lu-card-top {
   display: flex;
@@ -2987,31 +3066,50 @@ table.cmp .dim small {
   font-size: 0.85rem;
 }
 
-/* card motion between stages */
+/* card motion between stages.
+   will-change is set here and nowhere else: it is a promise to the compositor
+   that costs GPU memory for as long as it is set, so it belongs on the three
+   states that are actually moving, not standing on all twelve cards for the
+   life of the page. app.js strips these classes on animationend. */
+.lu-entering,
+.lu-leaving,
+.lu-exit {
+  will-change: transform, opacity;
+  z-index: 3;
+}
 .lu-entering {
-  animation: lu-in 0.5s var(--ease) both;
+  animation: lu-in var(--lu-move) var(--ease) both;
 }
 .lu-leaving {
-  animation: lu-out 0.2s var(--ease) both;
+  animation: lu-out var(--lu-quick) var(--ease) both;
 }
+/* A retiring card is pinned to the position it already occupied (app.js writes
+   top/height from one measurement) and taken out of flow, so the column closes
+   the gap in a single reflow instead of one per animation frame. */
 .lu-exit {
-  animation: lu-gone 0.45s var(--ease) both;
+  position: absolute;
+  left: 0;
+  right: 0;
+  animation: lu-gone var(--lu-move) var(--ease) both;
 }
-/* Each of these carries translateZ(var(--cz)) because they animate `transform`
-   outright, and a card mid-move would otherwise drop to zero depth and snap
-   back on landing. --cz comes from the column the card is in, so a card
-   animating into a later stage arrives already at its new depth. It resolves to
-   0px below 861px, where the board is flat. */
+/* Every one of these moves transform and opacity and nothing else, so they run
+   on the compositor and never reach layout.
+
+   lu-gone used to animate max-height and margin-top as well. Those are layout
+   properties: each frame re-ran layout for the column and every card under the
+   one leaving, roughly thirty times per exit, every two seconds. That was the
+   scroll-and-hover flicker. The collapse it was buying is now a single reflow,
+   paid once when .lu-exit takes the card out of flow. */
 @keyframes lu-in {
   from { opacity: 0; transform: translateX(-14px) scale(0.97); }
   60%  { opacity: 1; }
-  to   { opacity: 1; transform: none; }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
 }
 @keyframes lu-out {
   to { opacity: 0.25; transform: translateX(10px) scale(0.98); }
 }
 @keyframes lu-gone {
-  to { opacity: 0; transform: translateY(10px) scale(0.96); max-height: 0; margin-top: -9px; }
+  to { opacity: 0; transform: translateY(10px) scale(0.96); }
 }
 
 /* ---------- 02 publishes-to band ---------- */
@@ -4528,10 +4626,18 @@ table.cmp .dim small {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: clamp(14px, 2vw, 22px);
-  align-items: start;
+  /* See .plans — same fix. Here the three CTAs were already on one line; it was
+     only the bottom edge that was ragged, by 62px at 1440px. */
+  align-items: stretch;
 }
 .price-card {
   position: relative;
+  /* A column so the stretched height lands as trailing space under the feature
+     list, rather than being distributed by the block layout in some other way.
+     The cards keep different feature-list lengths on purpose — what has to
+     match is the box, not the number of lines inside it. */
+  display: flex;
+  flex-direction: column;
   padding: clamp(24px, 2.8vw, 32px);
   border: 1px solid var(--rule);
   border-radius: var(--r-lg);
@@ -5482,6 +5588,15 @@ table.cmp .dim small {
     transform: none;
     transition: none;
   }
+  .lu-card::after {
+    transition: none;
+  }
+  .lu-entering,
+  .lu-leaving,
+  .lu-exit {
+    animation: none;
+    will-change: auto;
+  }
 }
 
 /* ==========================================================================
@@ -5869,9 +5984,15 @@ select {
 
 /* ---------- item 1 follow-on ----------
    A fuller column must not gain a scrollbar; that shaved 6px off the cards in
-   Published while the column itself stayed the same width. */
+   Published while the column itself stayed the same width.
+
+   This used to be `overflow: hidden`, which also clipped the 2px hover lift and
+   the hover shadow at the column edges — the top card in a column visibly lost
+   its shadow on hover. The scrollbar it was guarding against came from lu-gone
+   animating max-height; that animation is gone, so the clip can be too.
+   .lineup still has overflow: hidden, so nothing escapes the board itself. */
 .lu-slot {
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* ==========================================================================

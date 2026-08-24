@@ -80,12 +80,20 @@ export default async function handler(req, res) {
   // database here. So deployed, an unconfigured login is a refusal, not a
   // convenience. Locally nothing changes.
   if (!loaded.authEnabled()) {
+    const missing = loaded.authMissing();
     return fail(
       res,
       503,
       'The admin is not configured, and will not run unprotected on a public URL.\n\n' +
-        'Set ADMIN_USER, ADMIN_PASSWORD_HASH and ADMIN_SESSION_SECRET in the project\n' +
-        'environment variables, then redeploy. Generate them with:  npm run admin:password'
+        `This deployment cannot see: ${missing.join(', ')}\n\n` +
+        'Add them in Vercel → Project → Settings → Environment Variables, then\n' +
+        'redeploy — variables added after a deployment do not reach the one already\n' +
+        'running. Two things to check if they look like they are already set:\n\n' +
+        '  1. Environment. A variable ticked only for Preview is invisible in\n' +
+        '     Production, and vice versa. Tick the one this URL is.\n' +
+        '  2. Redeploy. Settings → Deployments → ⋯ → Redeploy on the latest one.\n\n' +
+        'The values are the ADMIN_ lines in your local .env. Print them with:\n' +
+        '  npm run admin:password -- --show'
     );
   }
 

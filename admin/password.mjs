@@ -22,6 +22,38 @@ const args = process.argv.slice(2);
 const printOnly = args.includes('--print');
 const user = args.includes('--user') ? args[args.indexOf('--user') + 1] : null;
 
+/**
+ * `--show`: print the login variables already in .env, for pasting into a host.
+ *
+ * Not a new password — the existing one. A deployment needs the same three
+ * values this machine uses, and the alternative is opening .env and picking the
+ * right lines out of it by eye, which is where a truncated hash comes from.
+ *
+ * The password itself is not among them and cannot be: .env holds a hash.
+ */
+if (args.includes('--show')) {
+  const file = join(resolve(import.meta.dirname, '..'), '.env');
+  if (!existsSync(file)) {
+    console.error('\nNo .env here. Create the login first:  npm run admin:password\n');
+    process.exit(1);
+  }
+  const lines = readFileSync(file, 'utf8')
+    .split('\n')
+    .filter((l) => /^ADMIN_(USER|PASSWORD_HASH|SESSION_SECRET)=/.test(l.trim()));
+
+  if (!lines.length) {
+    console.error('\nNo login configured yet. Create one:  npm run admin:password\n');
+    process.exit(1);
+  }
+
+  console.log('\nSet these in your host, then redeploy:\n');
+  for (const l of lines) console.log('  ' + l.trim());
+  console.log('\nADMIN_SESSION_SECRET is optional — without it a restart signs you out.');
+  console.log('Treat all three as secrets: they are what stands between the internet');
+  console.log('and your content database.\n');
+  process.exit(0);
+}
+
 /** Read a line without echoing it back to the terminal. */
 const askHidden = (question) =>
   new Promise((done) => {

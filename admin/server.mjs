@@ -1418,6 +1418,9 @@ export const describeAuth = () =>
  */
 export const authEnabled = () => auth.enabled;
 
+/** Which login variables the runtime cannot see. For the deployed refusal. */
+export const authMissing = () => auth.missing || [];
+
 export const describeStore = () => `${driver} → ${target}`;
 
 // Loopback only. The login guards the machine; the binding guards the network,

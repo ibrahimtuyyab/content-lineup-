@@ -155,9 +155,18 @@ export function createAuth(env = process.env) {
   const secret = (env.ADMIN_SESSION_SECRET || '').trim();
 
   if (!user || !hash) {
+    // Name the ones actually missing. "Set these three" when two are already
+    // set sends you looking in the wrong place — and the usual cause is a
+    // variable that exists but is scoped to the wrong environment, which looks
+    // identical to one that was never added.
+    const missing = [!user && 'ADMIN_USER', !hash && 'ADMIN_PASSWORD_HASH'].filter(Boolean);
     return {
       enabled: false,
-      reason: !user && !hash ? 'ADMIN_USER and ADMIN_PASSWORD_HASH are not set' : 'the login is half-configured',
+      missing,
+      reason:
+        missing.length === 2
+          ? 'ADMIN_USER and ADMIN_PASSWORD_HASH are not set'
+          : `${missing[0]} is not set (the other one is)`,
       isLoggedIn: () => true,
     };
   }

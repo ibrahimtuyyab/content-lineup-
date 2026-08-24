@@ -342,12 +342,15 @@ Environment variables, in Project → Settings → Environment Variables:
 |---|---|
 | `DATABASE_URL` | already there if Neon is connected — the editor reads and writes through it |
 | `ADMIN_USER` | the username |
-| `ADMIN_PASSWORD_HASH` | `npm run admin:password -- --print` prints this and the next one |
+| `ADMIN_PASSWORD_HASH` | already in your `.env` — print all three with `npm run admin:password -- --show` |
 | `ADMIN_SESSION_SECRET` | signs the session cookie |
 | `VERCEL_DEPLOY_HOOK_URL` | optional; see below |
 
 **Without the login variables the deployed admin refuses to serve at all** — a
-503 telling you to set them. Locally an unconfigured login means "no login",
+503 naming the ones it cannot see. Two things make a variable that *is* set look
+missing: it was ticked for Preview but not Production (or the reverse), and
+variables added after a deployment do not reach the one already running, so a
+redeploy is needed either way. Locally an unconfigured login means "no login",
 which is a reasonable default for a tool bound to loopback; on a public URL it
 would mean an unauthenticated editor for the content database, so there it is a
 refusal rather than a convenience.

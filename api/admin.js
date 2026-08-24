@@ -50,6 +50,16 @@ const notConfigured = (missing) => {
   const absent = known.filter((k) => !seen.includes(k));
   const where = process.env.VERCEL_ENV || 'unknown';
 
+  // Anything that looks like an attempt at these names but is not one of them.
+  // A variable added as ADMIN-USER, Admin_User or with the whole `NAME=value`
+  // line pasted into the name box is set, and invisible to a lookup by exact
+  // name — so it reads as "you never added it" when in fact you did.
+  // ADMIN_BASE is this function's own — it sets it at the top of this file.
+  const ours = [...known, 'ADMIN_BASE'];
+  const lookalikes = Object.keys(process.env)
+    .filter((k) => /admin/i.test(k) && !ours.includes(k))
+    .sort();
+
   return [
     'The admin is not configured, and will not run unprotected on a public URL.',
     '',
@@ -59,6 +69,13 @@ const notConfigured = (missing) => {
     `  environment   ${where}${where === 'preview' ? '   (a Preview URL, not Production)' : ''}`,
     `  set           ${seen.length ? seen.join(', ') : '(none of them)'}`,
     `  not set       ${absent.join(', ')}`,
+    ...(lookalikes.length
+      ? [
+          `  near misses   ${lookalikes.join(', ')}`,
+          '                ^ these exist but are not the names the admin reads.',
+          '                  Rename them exactly as listed under "not set".',
+        ]
+      : []),
     '------------------------------------------------------------------------',
     '',
     seen.includes('DATABASE_URL') && !seen.includes('ADMIN_USER')

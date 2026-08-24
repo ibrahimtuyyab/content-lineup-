@@ -2,9 +2,13 @@
 //
 //   node admin.mjs            → http://127.0.0.1:8081
 //
-// Deliberately bound to loopback only and with no authentication: it is a local
-// authoring tool, not a deployed service. Do not expose it to a network.
-// The published site is the static output in dist/ — this never serves that.
+// Bound to loopback, and behind a login: see admin/auth.mjs. Loopback is what
+// keeps the network out; the login is what keeps a browser tab left open on a
+// shared machine from being an open door to the site's content.
+//
+// It is still an authoring tool rather than a deployed service — do not expose
+// the port. The published site is the static output in dist/; this never
+// serves that.
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -21,9 +25,37 @@ import {
   allCategories,
   allAuthors,
   stats,
+  allPlans,
+  planBySlug,
+  savePlan,
+  deletePlan,
+  setPlanFeatured,
+  allBlocks,
+  blockByKey,
+  saveBlock,
+  deleteBlock,
+  upsertAuthor,
+  upsertCategory,
+  deleteAuthor,
+  deleteCategory,
+  authorBySlug,
+  categoryBySlug,
+  authorUsage,
+  categoryUsage,
 } from './db/store.mjs';
 import { renderBody } from './db/render.mjs';
 import { screens } from './src/data/site.mjs';
+import { BLOCKS, blockDef, effective } from './src/data/content-blocks.mjs';
+import { parseField, applyAction } from './admin/form.mjs';
+import { validateBlock } from './admin/validate.mjs';
+import {
+  contentIndexView,
+  blockEditView,
+  referenceView,
+  authorEditView,
+  categoryEditView,
+} from './admin/content-views.mjs';
+import { createAuth, loginView, safeNext } from './admin/auth.mjs';
 
 const ROOT = resolve(import.meta.dirname);
 const PORT = Number(process.env.ADMIN_PORT) || 8081;
@@ -34,6 +66,8 @@ try {
   console.error(`Cannot reach the content store (${driver} → ${target}).\n${err.message}`);
   process.exit(1);
 }
+
+const auth = createAuth();
 
 const esc = (s = '') =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -114,10 +148,66 @@ td.actions{display:table-cell}
 details.help{margin-top:10px}
 details.help summary{cursor:pointer;font-size:12.5px;color:var(--accent)}
 details.help pre{background:var(--cream);padding:12px;border-radius:8px;font-size:12px;overflow-x:auto}
-@media(max-width:860px){form.grid{grid-template-columns:1fr}.faqrow{grid-template-columns:1fr}}
+
+/* ---- site content editor ---- */
+.head{display:flex;align-items:flex-end;gap:16px;justify-content:space-between;margin:26px 0 12px}
+.head h1,.head h2{margin:0}
+.head+table{margin-top:0}
+.pill.edited{background:var(--accent-soft);color:var(--accent);margin-left:6px}
+td.cell{max-width:520px;font-size:12.5px;color:var(--sub);white-space:normal}
+.card.warn{border-color:#f0dcc0;background:var(--amber-soft)}
+.card.warn strong{color:var(--amber)}
+.btn.xs{padding:3px 8px;font-size:12px;border-radius:7px;line-height:1.4}
+.btn:disabled{opacity:.35;cursor:default}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+.fields>.f>label{margin-bottom:6px}
+.fields>fieldset,.fields>.rep{grid-column:1/-1}
+.f{min-width:0}
+fieldset{border:1px solid var(--rule);border-radius:10px;padding:14px 16px 16px;margin:0;background:#fcfbf8}
+legend{font:650 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--sub);padding:0 6px}
+label.check{display:flex;align-items:center;gap:8px;font:550 13px var(--sans);color:var(--ink);
+margin:22px 0 0;cursor:pointer}
+label.check input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:var(--accent)}
+.rep{border:1px solid var(--rule);border-radius:12px;background:var(--paper2);margin:4px 0 2px}
+.rep-bar{display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--rule);
+background:#f5f4f0;border-radius:12px 12px 0 0}
+.rep-bar strong{font-family:var(--serif);font-size:15px}
+.rep-bar .mono{margin-right:auto}
+.rep-item{border-bottom:1px solid #f0eee9;padding:0 14px 16px}
+.rep-item:last-child{border-bottom:0;border-radius:0 0 12px 12px}
+.rep-head{display:flex;align-items:center;gap:10px;padding:11px 0 12px;position:sticky;top:57px;
+background:var(--paper2);z-index:2}
+.rep-n{font:650 10.5px var(--mono);background:var(--cream);color:var(--sub);border-radius:99px;
+padding:3px 8px;flex:none}
+.rep-title{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rep-btns{margin-left:auto;display:flex;gap:6px;flex:none}
+.rep .rep{background:#fcfbf8}
+textarea.code{font-size:12.5px;line-height:1.55;tab-size:2}
+.sticky{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;padding:14px 0;
+background:linear-gradient(to top,var(--paper) 62%,rgba(250,250,247,0));margin-top:8px}
+.sticky .hint{margin:0}
+.blockform>.fields,.blockform>.rep{margin-bottom:8px}
+.errs{margin:0;padding-left:20px}
+.login{max-width:380px;margin:6vh auto 0}
+.login h1{margin-bottom:6px}
+.login form{background:var(--paper2);border:1px solid var(--rule);border-radius:12px;padding:22px}
+.login label{margin-top:14px}
+.login label:first-child{margin-top:0}
+.login .btn{width:100%;justify-content:center;margin-top:20px}
+.login .hint{text-align:center;margin-top:16px}
+.errs li{margin-bottom:4px}
+@media(max-width:860px){form.grid{grid-template-columns:1fr}.faqrow{grid-template-columns:1fr}
+.fields{grid-template-columns:1fr}.head{flex-direction:column;align-items:flex-start}}
 `;
 
-const layout = (title, body, flash = '') => `<!doctype html>
+/**
+ * The page chrome.
+ *
+ * `bare` drops the navigation, for the one page that is reachable without a
+ * session: offering Posts, Pricing and Rebuild to someone who is not signed in
+ * is a row of buttons that can only bounce them back to where they already are.
+ */
+const layout = (title, body, flash = '', bare = false) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
@@ -126,11 +216,19 @@ const layout = (title, body, flash = '') => `<!doctype html>
 <header><div class="bar">
   <span class="brand">Content<b>Lineup</b></span>
   <span class="tag">Content database</span>
-  <div class="right">
-    <a class="btn ghost sm" href="/">All posts</a>
+  ${
+    bare
+      ? ''
+      : `<div class="right">
+    <a class="btn ghost sm" href="/">Posts</a>
+    <a class="btn ghost sm" href="/plans">Pricing</a>
+    <a class="btn ghost sm" href="/content">Site content</a>
+    <a class="btn ghost sm" href="/reference">Authors</a>
     <a class="btn sm" href="/new">New post</a>
     <form method="post" action="/build" style="display:inline"><button class="btn ghost sm">Rebuild site</button></form>
-  </div>
+    ${auth.enabled ? '<form method="post" action="/logout" style="display:inline"><button class="btn ghost sm" title="Sign out">Sign out</button></form>' : ''}
+  </div>`
+  }
 </div></header>
 <main>${flash}${body}</main>
 </body></html>`;
@@ -369,6 +467,203 @@ Cell 1   | Cell 2
 }
 
 /* --------------------------------------------------------------- data loads */
+/* ================================================================== pricing */
+
+/** Bullets are edited as one-per-line: a plan has nine of them and their order
+    matters, and nine text inputs is a worse way to move line six above line two
+    than simply editing a list. */
+const linesToList = (s) =>
+  String(s || '')
+    .split('\n')
+    .map((l) => l.replace(/^\s*[-*·]\s*/, '').trim())
+    .filter(Boolean);
+
+function plansView(plans, flash) {
+  const rows = plans
+    .map(
+      (p) => `<tr>
+    <td>
+      <a href="/plans/edit/${esc(p.id)}"><strong>${esc(p.name)}</strong></a>
+      ${p.featured ? '<span class="star" title="Highlighted as most popular">★</span>' : ''}
+      <div class="mono">${esc(p.id)}</div>
+    </td>
+    <td><strong>${esc(p.price)}</strong><span class="mono">${esc(p.period)}</span></td>
+    <td class="mono">${p.annual ? esc(p.annual.price) + ' · ' + esc(p.annual.perMonth) + '/mo' : '—'}</td>
+    <td>${esc(p.kicker)}</td>
+    <td class="mono">${p.includes.length} bullet${p.includes.length === 1 ? '' : 's'}</td>
+    <td class="actions">
+      <a class="btn ghost sm" href="/plans/edit/${esc(p.id)}">Edit</a>
+      ${
+        p.featured
+          ? ''
+          : `<form method="post" action="/plans/feature"><input type="hidden" name="slug" value="${esc(
+              p.id
+            )}"><button class="btn ghost sm">Make featured</button></form>`
+      }
+    </td>
+  </tr>`
+    )
+    .join('');
+
+  const body = `
+  <h1>Pricing</h1>
+  <p class="sub">These three rows are what the homepage and /pricing render. Changing a price here
+    changes it everywhere it appears, on the next rebuild.</p>
+  <div class="stats">
+    <div class="stat"><b>${plans.length}</b><span>plans</span></div>
+    <div class="stat"><b>${plans.filter((p) => p.annual).length}</b><span>with annual</span></div>
+    <div class="stat"><b>${plans.reduce((n, p) => n + p.includes.length, 0)}</b><span>bullets</span></div>
+  </div>
+  <table>
+    <thead><tr><th>Plan</th><th>Monthly</th><th>Annual</th><th>Kicker</th><th>Includes</th><th></th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="6">No plans yet. Seed them with <span class="mono">npm run plans:push</span>.</td></tr>'}</tbody>
+  </table>
+  <p class="hint">Order is set by the <span class="mono">sort</span> field on each plan. After saving,
+    use <strong>Rebuild site</strong> to publish the change into <span class="mono">dist/</span>.</p>`;
+  return layout('Pricing', body, flash);
+}
+
+function planEditView(plan, flash) {
+  const p =
+    plan || {
+      id: '',
+      name: '',
+      sort: 0,
+      price: '',
+      period: '/month',
+      numeric: '',
+      annual: null,
+      kicker: '',
+      outcome: '',
+      summary: '',
+      ctaLabel: 'Start free',
+      featured: false,
+      includes: [],
+      limits: '',
+    };
+  const a = p.annual || { price: '', numeric: '', perMonth: '', saving: '' };
+  const isNew = !plan;
+
+  const body = `
+  <h1>${isNew ? 'New plan' : esc(p.name)}</h1>
+  <p class="sub">${
+    isNew
+      ? 'A plan needs a slug that will not change — it is what the database and the CTA tracking key off.'
+      : 'Slug <span class="mono">' + esc(p.id) + '</span>'
+  }</p>
+  <form class="grid" method="post" action="/plans/save">
+    <input type="hidden" name="original" value="${esc(p.id)}">
+
+    <div>
+      <label>Slug</label>
+      <input name="slug" value="${esc(p.id)}" ${isNew ? '' : 'readonly'} required>
+      <div class="hint">Lowercase, no spaces. Used by the analytics CTA id.</div>
+    </div>
+    <div>
+      <label>Name</label>
+      <input name="name" value="${esc(p.name)}" required>
+    </div>
+
+    <div>
+      <label>Monthly price</label>
+      <input name="price" value="${esc(p.price)}" placeholder="$29" required>
+      <div class="hint">Shown as typed, currency symbol and all.</div>
+    </div>
+    <div>
+      <label>Period</label>
+      <input name="period" value="${esc(p.period)}" placeholder="/month" required>
+    </div>
+
+    <div>
+      <label>Numeric price</label>
+      <input name="numeric" value="${esc(p.numeric)}" placeholder="29" required>
+      <div class="hint">Digits only — this is the figure in the JSON-LD offer, where a real number is required.</div>
+    </div>
+    <div>
+      <label>Sort</label>
+      <input name="sort" type="number" value="${esc(String(p.sort ?? 0))}">
+      <div class="hint">Low to high, left to right.</div>
+    </div>
+
+    <div class="full"><h2>Annual billing</h2>
+      <div class="hint">Leave the annual price empty for a plan with no yearly option — the other three
+        are then ignored. The database rejects a half-filled annual price.</div>
+    </div>
+    <div>
+      <label>Annual price</label>
+      <input name="annualPrice" value="${esc(a.price)}" placeholder="$290">
+    </div>
+    <div>
+      <label>Annual numeric</label>
+      <input name="annualNumeric" value="${esc(a.numeric)}" placeholder="290">
+    </div>
+    <div>
+      <label>Shown per month</label>
+      <input name="annualPerMonth" value="${esc(a.perMonth)}" placeholder="$24">
+    </div>
+    <div>
+      <label>Saving label</label>
+      <input name="annualSaving" value="${esc(a.saving)}" placeholder="2 months free">
+    </div>
+
+    <div class="full"><h2>Copy</h2></div>
+    <div>
+      <label>Kicker</label>
+      <input name="kicker" value="${esc(p.kicker)}" placeholder="Most popular" required>
+      <div class="hint">The badge above the card.</div>
+    </div>
+    <div>
+      <label>CTA label</label>
+      <input name="ctaLabel" value="${esc(p.ctaLabel || 'Start free')}" required>
+      <div class="hint">The link target is the signup URL from site config, the same for every plan.</div>
+    </div>
+    <div class="full">
+      <label>Outcome</label>
+      <input name="outcome" value="${esc(p.outcome)}" required>
+      <div class="hint">The serif line on the homepage card. One sentence, in the customer's terms.</div>
+    </div>
+    <div class="full">
+      <label>Summary</label>
+      <textarea name="summary" rows="3" required>${esc(p.summary)}</textarea>
+      <div class="hint">The paragraph on /pricing. Keeping the three summaries a similar length is what
+        keeps the three CTA buttons on one line.</div>
+    </div>
+    <div class="full">
+      <label>Includes <span class="count">${p.includes.length} lines</span></label>
+      <textarea name="includes" rows="10">${esc((p.includes || []).join('\n'))}</textarea>
+      <div class="hint">One bullet per line, in the order they should appear. The homepage shows the
+        first five; /pricing shows all of them.</div>
+    </div>
+    <div class="full">
+      <label>Limits</label>
+      <textarea name="limits" rows="2" required>${esc(p.limits)}</textarea>
+      <div class="hint">The dashed footer line on /pricing.</div>
+    </div>
+
+    <div class="full">
+      <label><input type="checkbox" name="featured" value="1" style="width:auto;margin-right:8px"${
+        p.featured ? ' checked' : ''
+      }>Highlight this plan as most popular</label>
+      <div class="hint">Only one plan can carry it; ticking this clears it from whichever plan has it now.</div>
+    </div>
+
+    <div class="full actions">
+      <button class="btn">Save plan</button>
+      <a class="btn ghost" href="/plans">Cancel</a>
+      ${
+        isNew
+          ? ''
+          : `<form method="post" action="/plans/delete" onsubmit="return confirm('Delete ${esc(
+              p.name
+            )}? This cannot be undone.')" style="margin-left:auto"><input type="hidden" name="slug" value="${esc(
+              p.id
+            )}"><button class="btn danger">Delete</button></form>`
+      }
+    </div>
+  </form>`;
+  return layout(isNew ? 'New plan' : p.name, body, flash);
+}
+
 const loadIndex = async () => ({ posts: await allPosts(), s: await stats() });
 const loadEdit = async (post) => ({
   post,
@@ -404,18 +699,413 @@ const redirect = (res, to) => {
 const flashOk = (msg) => `<div class="flash ok">${esc(msg)}</div>`;
 const flashErr = (msg) => `<div class="flash err">${esc(msg)}</div>`;
 
+/** A list of problems, as one block rather than one flash per line. */
+const flashList = (kind, title, items) =>
+  `<div class="flash ${kind}"><strong>${esc(title)}</strong>
+     <ul class="errs">${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul></div>`;
+
+/**
+ * The content register with the current overrides laid over it.
+ *
+ * Read per request rather than once at startup: a cross-block check — is this
+ * integration group one that exists? — has to see an edit made a minute ago,
+ * and the module-level snapshot in content-blocks.mjs was taken when the admin
+ * booted.
+ */
+const loadContent = async () => {
+  const overrides = await allBlocks();
+  return { overrides, live: effective(overrides) };
+};
+
+/** Everything the block editor needs to render one key. */
+const loadBlock = async (key, json) => {
+  const def = blockDef(key);
+  if (!def) return null;
+  const { overrides, live } = await loadContent();
+  const row = key in overrides ? await blockByKey(key) : null;
+  return {
+    def,
+    live,
+    json,
+    value: live[key],
+    isEdited: key in overrides,
+    updatedAt: row?.updated_at || null,
+  };
+};
+
 /* ------------------------------------------------------------------- server */
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
   const path = url.pathname;
 
   try {
-    // Fonts, so the admin matches the brand without a network request.
+    // Fonts, so the admin matches the brand without a network request. Left
+    // outside the guard so the login page is not typeset in a fallback font.
     if (path.startsWith('/_asset/')) {
       const file = join(ROOT, 'public', path.replace('/_asset/', ''));
       if (!resolve(file).startsWith(join(ROOT, 'public'))) return send(res, 403, 'no');
       res.writeHead(200, { 'Content-Type': 'font/woff2', 'Cache-Control': 'max-age=86400' });
       return res.end(readFileSync(file));
+    }
+
+    /* ----------------------------------------------------------------- login */
+    if (req.method === 'GET' && path === '/login') {
+      if (!auth.enabled || auth.isLoggedIn(req)) return redirect(res, '/');
+      return send(res, 200, loginView(layout, { next: url.searchParams.get('next') || '/' }));
+    }
+
+    if (req.method === 'POST' && path === '/login') {
+      const f = await readBody(req);
+      const result = auth.login(f.get('username'), f.get('password'));
+      if (!result.ok) {
+        // 401, not 200: a failed sign-in is a failed sign-in, and saying so in
+        // the status keeps anything scripted against this honest.
+        return send(res, 401, loginView(layout, { error: result.error, next: f.get('next') }));
+      }
+      // Only ever redirect to a path on this admin. An open redirect here would
+      // turn the login into a way of laundering a link to somewhere else.
+      res.writeHead(303, { Location: safeNext(f.get('next')), 'Set-Cookie': result.cookie });
+      return res.end();
+    }
+
+    if (req.method === 'POST' && path === '/logout') {
+      res.writeHead(303, { Location: '/login', 'Set-Cookie': auth.logoutCookie() });
+      return res.end();
+    }
+
+    // Everything past this point needs a session.
+    if (auth.enabled && !auth.isLoggedIn(req)) {
+      if (req.method !== 'GET') {
+        // A POST from a stale tab: send it to the login rather than silently
+        // dropping it, so it is obvious the session expired.
+        return send(res, 401, loginView(layout, { error: 'Your session expired. Sign in again.', next: '/' }));
+      }
+      return redirect(res, `/login?next=${encodeURIComponent(path + url.search)}`);
+    }
+
+    /* ------------------------------------------------------------- pricing */
+    if (req.method === 'GET' && path === '/plans') {
+      const f = url.searchParams.get('ok')
+        ? flashOk(url.searchParams.get('ok'))
+        : url.searchParams.get('err')
+        ? flashErr(url.searchParams.get('err'))
+        : '';
+      return send(res, 200, plansView(await allPlans(), f));
+    }
+
+    if (req.method === 'GET' && path === '/plans/new') {
+      return send(res, 200, planEditView(null, ''));
+    }
+
+    if (req.method === 'GET' && path.startsWith('/plans/edit/')) {
+      const plan = await planBySlug(decodeURIComponent(path.slice(12)));
+      if (!plan)
+        return send(res, 404, layout('Not found', '<h1>No such plan</h1><p><a href="/plans">Back</a></p>'));
+      const f = url.searchParams.get('ok') ? flashOk(url.searchParams.get('ok')) : '';
+      return send(res, 200, planEditView(plan, f));
+    }
+
+    if (req.method === 'POST' && path === '/plans/save') {
+      const f = await readBody(req);
+      const slug = slugify(f.get('slug') || '');
+      if (!slug) throw new Error('A plan needs a slug.');
+
+      // The four annual fields travel together — the table has a check
+      // constraint saying so, and a half-filled annual price would be rejected
+      // there with a much less helpful message than this one.
+      const annualPrice = (f.get('annualPrice') || '').trim();
+      const annual = annualPrice
+        ? {
+            price: annualPrice,
+            numeric: (f.get('annualNumeric') || '').trim(),
+            perMonth: (f.get('annualPerMonth') || '').trim(),
+            saving: (f.get('annualSaving') || '').trim(),
+          }
+        : null;
+      if (annual && !(annual.numeric && annual.perMonth && annual.saving)) {
+        throw new Error(
+          'An annual price needs all four fields: price, numeric, shown-per-month and saving label.'
+        );
+      }
+
+      const includes = linesToList(f.get('includes'));
+      if (!includes.length) throw new Error('A plan needs at least one bullet in Includes.');
+
+      await savePlan({
+        id: slug,
+        name: (f.get('name') || '').trim(),
+        sort: Number(f.get('sort')) || 0,
+        price: (f.get('price') || '').trim(),
+        period: (f.get('period') || '/month').trim(),
+        numeric: (f.get('numeric') || '0').trim(),
+        annual,
+        kicker: (f.get('kicker') || '').trim(),
+        outcome: (f.get('outcome') || '').trim(),
+        summary: (f.get('summary') || '').trim(),
+        ctaLabel: (f.get('ctaLabel') || 'Start free').trim(),
+        featured: f.get('featured') === '1',
+        includes,
+        limits: (f.get('limits') || '').trim(),
+      });
+      return redirect(res, `/plans/edit/${encodeURIComponent(slug)}?ok=${encodeURIComponent('Saved. Rebuild to publish it.')}`);
+    }
+
+    if (req.method === 'POST' && path === '/plans/feature') {
+      const f = await readBody(req);
+      await setPlanFeatured((f.get('slug') || '').trim());
+      return redirect(res, `/plans?ok=${encodeURIComponent('Highlight moved. Rebuild to publish it.')}`);
+    }
+
+    if (req.method === 'POST' && path === '/plans/delete') {
+      const f = await readBody(req);
+      await deletePlan((f.get('slug') || '').trim());
+      return redirect(res, `/plans?ok=${encodeURIComponent('Plan deleted.')}`);
+    }
+
+    /* -------------------------------------------------------- site content */
+    if (req.method === 'GET' && path === '/content') {
+      const { overrides, live } = await loadContent();
+      const known = new Set(BLOCKS.map((b) => b.key));
+      const f = url.searchParams.get('ok')
+        ? flashOk(url.searchParams.get('ok'))
+        : url.searchParams.get('err')
+        ? flashErr(url.searchParams.get('err'))
+        : '';
+      return send(
+        res,
+        200,
+        contentIndexView(
+          layout,
+          {
+            live,
+            edited: new Set(Object.keys(overrides).filter((k) => known.has(k))),
+            orphans: Object.keys(overrides).filter((k) => !known.has(k)),
+            counts: {
+              faqs: (live.faqGroups || []).reduce((n, g) => n + (g.items?.length || 0), 0),
+              features: (live.features || []).length,
+            },
+          },
+          f
+        )
+      );
+    }
+
+    if (req.method === 'GET' && path.startsWith('/content/')) {
+      const key = decodeURIComponent(path.slice('/content/'.length));
+      const ctx = await loadBlock(key, url.searchParams.get('json') === '1');
+      if (!ctx) {
+        return send(
+          res,
+          404,
+          layout(
+            'Not found',
+            `<h1>No content block called "${esc(key)}"</h1>
+             <p><a href="/content">Back to site content</a></p>`
+          )
+        );
+      }
+      const warn = url.searchParams.get('warn');
+      const f = url.searchParams.get('ok')
+        ? flashOk(url.searchParams.get('ok')) +
+          (warn ? flashList('err', 'Saved, but worth a look:', warn.split('\n')) : '')
+        : '';
+      return send(res, 200, blockEditView(layout, ctx, f));
+    }
+
+    if (req.method === 'POST' && path === '/content/save') {
+      const f = await readBody(req);
+      const key = f.get('key');
+      const def = blockDef(key);
+      if (!def) throw new Error(`No content block called "${key}".`);
+      const json = f.get('mode') === 'json';
+      const { overrides, live } = await loadContent();
+      const isEdited = key in overrides;
+
+      let value;
+      if (json) {
+        try {
+          value = JSON.parse(f.get('json') || '');
+        } catch (err) {
+          // Hand back what was typed, not the stored value: a syntax error two
+          // hundred lines into an edit is not a reason to lose the edit.
+          return send(
+            res,
+            400,
+            blockEditView(
+              layout,
+              { def, live, json: true, value: f.get('json'), isEdited, updatedAt: null },
+              flashErr(`That is not valid JSON, so nothing was saved: ${err.message}`)
+            )
+          );
+        }
+      } else {
+        value = parseField(f, 'v', def.default);
+      }
+
+      // Add / Remove / Move. Applied to the form as submitted and handed back
+      // unsaved, so the button never writes anything and never loses an edit
+      // made to another entry first.
+      const action = f.get('__action');
+      if (action) {
+        const said = applyAction(value, def.default, action);
+        return send(
+          res,
+          200,
+          blockEditView(
+            layout,
+            {
+              def,
+              live: effective({ ...overrides, [key]: value }),
+              json,
+              value,
+              isEdited,
+              updatedAt: null,
+            },
+            said ? flashOk(said) : flashErr('That change could not be applied.')
+          )
+        );
+      }
+
+      // Validated against the content as it would be *after* this save, so a
+      // cross-block rule reads the new value rather than the stored one.
+      const { errors, warnings } = validateBlock(key, value, effective({ ...overrides, [key]: value }));
+      if (errors.length) {
+        return send(
+          res,
+          400,
+          blockEditView(
+            layout,
+            { def, live, json, value, isEdited, updatedAt: null },
+            flashList('err', `Not saved — ${errors.length} problem${errors.length === 1 ? '' : 's'}:`, errors)
+          )
+        );
+      }
+
+      await saveBlock(key, value, 'Edited in admin');
+      const q = new URLSearchParams({ ok: 'Saved. Rebuild to publish it.' });
+      if (warnings.length) q.set('warn', warnings.join('\n'));
+      return redirect(res, `/content/${encodeURIComponent(key)}?${q}`);
+    }
+
+    if (req.method === 'POST' && path === '/content/reset') {
+      const f = await readBody(req);
+      const key = f.get('key');
+      const existed = await deleteBlock(key);
+      return redirect(
+        res,
+        `/content?ok=${encodeURIComponent(
+          existed
+            ? `${key} is back to the content that ships in the repository. Rebuild to publish it.`
+            : `${key} had no edits to discard.`
+        )}`
+      );
+    }
+
+    /* ----------------------------------------------------- reference data */
+    if (req.method === 'GET' && path === '/reference') {
+      const f = url.searchParams.get('ok')
+        ? flashOk(url.searchParams.get('ok'))
+        : url.searchParams.get('err')
+        ? flashErr(url.searchParams.get('err'))
+        : '';
+      const [authors, cats, authorUse, catUse] = await Promise.all([
+        allAuthors(),
+        allCategories(),
+        authorUsage(),
+        categoryUsage(),
+      ]);
+      return send(res, 200, referenceView(layout, { authors, cats, authorUse, catUse }, f));
+    }
+
+    if (req.method === 'GET' && path === '/authors/new') {
+      return send(res, 200, authorEditView(layout, null, ''));
+    }
+
+    if (req.method === 'GET' && path.startsWith('/authors/')) {
+      const author = await authorBySlug(decodeURIComponent(path.slice('/authors/'.length)));
+      if (!author) {
+        return send(res, 404, layout('Not found', '<h1>No such author</h1><p><a href="/reference">Back</a></p>'));
+      }
+      return send(res, 200, authorEditView(layout, author, ''));
+    }
+
+    if (req.method === 'POST' && path === '/authors/save') {
+      const f = await readBody(req);
+      const name = (f.get('name') || '').trim();
+      if (!name) throw new Error('An author needs a name.');
+      const slug = slugify(f.get('slug') || name);
+      if (!slug) throw new Error('An author needs a slug.');
+
+      // A slug change is a different author as far as posts are concerned, and
+      // upserting the new one would leave the posts pointing at the old row.
+      const original = (f.get('original_slug') || '').trim();
+      if (original && original !== slug) {
+        throw new Error(
+          `An author's slug cannot be changed here: posts reference "${original}" and would be left ` +
+            'pointing at the old record. Create the new author, move the posts across, then delete the old one.'
+        );
+      }
+
+      await upsertAuthor({
+        slug,
+        name,
+        email: (f.get('email') || '').trim() || null,
+        bio: (f.get('bio') || '').trim() || null,
+        url: (f.get('url') || '').trim() || null,
+      });
+      return redirect(res, `/reference?ok=${encodeURIComponent(`Saved ${name}.`)}`);
+    }
+
+    if (req.method === 'POST' && path === '/authors/delete') {
+      const f = await readBody(req);
+      const slug = (f.get('slug') || '').trim();
+      await deleteAuthor(slug);
+      return redirect(res, `/reference?ok=${encodeURIComponent(`Deleted ${slug}.`)}`);
+    }
+
+    if (req.method === 'GET' && path === '/categories/new') {
+      return send(res, 200, categoryEditView(layout, null, ''));
+    }
+
+    if (req.method === 'GET' && path.startsWith('/categories/')) {
+      const cat = await categoryBySlug(decodeURIComponent(path.slice('/categories/'.length)));
+      if (!cat) {
+        return send(res, 404, layout('Not found', '<h1>No such category</h1><p><a href="/reference">Back</a></p>'));
+      }
+      return send(res, 200, categoryEditView(layout, cat, ''));
+    }
+
+    if (req.method === 'POST' && path === '/categories/save') {
+      const f = await readBody(req);
+      const label = (f.get('label') || '').trim();
+      const singular = (f.get('singular') || '').trim();
+      if (!label || !singular) throw new Error('A category needs both a plural label and a singular one.');
+      const slug = slugify(f.get('slug') || label);
+      if (!slug) throw new Error('A category needs a slug.');
+
+      // The slug is in the URL of every post in the category, so renaming one
+      // that holds posts silently breaks those links.
+      const original = (f.get('original_slug') || '').trim();
+      if (original && original !== slug) {
+        const use = (await categoryUsage())[original] || 0;
+        if (use) {
+          throw new Error(
+            `"${original}" holds ${use} post${use === 1 ? '' : 's'}, and the slug is part of their URLs. ` +
+              'Renaming it would break those links with nothing redirecting them.'
+          );
+        }
+        await deleteCategory(original);
+      }
+
+      await upsertCategory({ slug, label, singular, sort: Number(f.get('sort')) || 0 });
+      return redirect(res, `/reference?ok=${encodeURIComponent(`Saved ${label}.`)}`);
+    }
+
+    if (req.method === 'POST' && path === '/categories/delete') {
+      const f = await readBody(req);
+      const slug = (f.get('slug') || '').trim();
+      await deleteCategory(slug);
+      return redirect(res, `/reference?ok=${encodeURIComponent(`Deleted ${slug}.`)}`);
     }
 
     if (req.method === 'GET' && path === '/') {
@@ -526,11 +1216,22 @@ const server = createServer(async (req, res) => {
   }
 });
 
-// Loopback only — this tool has no authentication by design.
+// Loopback only. The login guards the machine; the binding guards the network,
+// and it has to stay that way — this speaks plain http.
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`\nContentLineup admin:  http://127.0.0.1:${PORT}`);
   console.log(`Store:                ${driver} → ${target}`);
-  console.log(`\nLocal only, no auth — do not expose this port.\n`);
+  console.log(
+    auth.enabled
+      ? `Login:                ${auth.user}` +
+          (auth.ephemeralSecret
+            ? '\n\nADMIN_SESSION_SECRET is not set, so restarting signs you out.\n' +
+              'Set one with: npm run admin:password'
+            : '')
+      : `Login:                off (${auth.reason})\n` +
+          '                      Turn it on with: npm run admin:password'
+  );
+  console.log(`\nLoopback only — do not expose this port.\n`);
 });
 
 for (const sig of ['SIGINT', 'SIGTERM']) {

@@ -313,6 +313,133 @@ export async function savePost(input) {
   return postBySlug(slug);
 }
 
+/* ==========================================================================
+   Pricing plans
+
+   Rows come back in the shape src/data/site.mjs already uses, so the renderers
+   do not have to learn a second vocabulary: snake_case columns are mapped to
+   the camelCase the templates read, and the four annual_* columns collapse
+   back into the single `annual` object (or null).
+   ========================================================================== */
+
+/** One v_plans row -> the object the pricing templates expect. */
+const planRow = (r) => ({
+  id: r.slug,
+  name: r.name,
+  sort: r.sort,
+  price: r.price,
+  period: r.period,
+  numeric: r.numeric_price,
+  annual: r.annual_price
+    ? {
+        price: r.annual_price,
+        numeric: r.annual_numeric,
+        perMonth: r.annual_per_month,
+        saving: r.annual_saving,
+      }
+    : null,
+  kicker: r.kicker,
+  outcome: r.outcome,
+  summary: r.summary,
+  ctaLabel: r.cta_label,
+  featured: r.featured,
+  // v_plans aggregates the bullets, so a plan is one row and one round trip.
+  includes: Array.isArray(r.includes) ? r.includes : JSON.parse(r.includes || '[]'),
+  limits: r.limits,
+  updatedAt: r.updated_at,
+});
+
+export const allPlans = async () => (await sql('select * from v_plans order by sort, id')).map(planRow);
+
+export const planBySlug = async (slug) => {
+  const rows = await sql('select * from v_plans where slug = $1', [slug]);
+  return rows.length ? planRow(rows[0]) : null;
+};
+
+/**
+ * Insert or update one plan and replace its bullet list.
+ *
+ * The bullets are deleted and re-inserted rather than diffed: the list is nine
+ * rows long and its order is meaningful, so a rewrite is both simpler and
+ * cheaper than working out which line moved where.
+ */
+export async function savePlan(p) {
+  const slug = String(p.id || p.slug || '').trim();
+  if (!slug) throw new Error('A plan needs a slug.');
+  const annual = p.annual || null;
+
+  // Only one plan may be featured, and the database enforces it with a partial
+  // unique index. Clear the flag elsewhere first, or the upsert below trips it.
+  if (p.featured) await sql('update plans set featured = false where slug <> $1', [slug]);
+
+  const [row] = await sql(
+    `insert into plans (
+       slug, name, sort, price, period, numeric_price,
+       annual_price, annual_numeric, annual_per_month, annual_saving,
+       kicker, outcome, summary, cta_label, featured, limits
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+     on conflict (slug) do update set
+       name             = excluded.name,
+       sort             = excluded.sort,
+       price            = excluded.price,
+       period           = excluded.period,
+       numeric_price    = excluded.numeric_price,
+       annual_price     = excluded.annual_price,
+       annual_numeric   = excluded.annual_numeric,
+       annual_per_month = excluded.annual_per_month,
+       annual_saving    = excluded.annual_saving,
+       kicker           = excluded.kicker,
+       outcome          = excluded.outcome,
+       summary          = excluded.summary,
+       cta_label        = excluded.cta_label,
+       featured         = excluded.featured,
+       limits           = excluded.limits
+     returning id`,
+    [
+      slug,
+      p.name,
+      Number(p.sort) || 0,
+      p.price,
+      p.period || '/month',
+      String(p.numeric ?? '0'),
+      annual?.price ?? null,
+      annual ? String(annual.numeric ?? '') : null,
+      annual?.perMonth ?? null,
+      annual?.saving ?? null,
+      p.kicker,
+      p.outcome,
+      p.summary,
+      p.ctaLabel || p.cta?.label || 'Start free',
+      !!p.featured,
+      p.limits,
+    ]
+  );
+
+  const includes = (p.includes || []).map((s) => String(s).trim()).filter(Boolean);
+  await tx([
+    ['delete from plan_includes where plan_id = $1', [row.id]],
+    ...includes.map((label, i) => [
+      'insert into plan_includes (plan_id, label, sort) values ($1, $2, $3)',
+      [row.id, label, i],
+    ]),
+  ]);
+  return slug;
+}
+
+export async function deletePlan(slug) {
+  // plan_includes is on delete cascade, so the bullets go with it.
+  await sql('delete from plans where slug = $1', [slug]);
+  return true;
+}
+
+export async function setPlanFeatured(slug) {
+  await tx([
+    ['update plans set featured = false where slug <> $1', [slug]],
+    ['update plans set featured = true where slug = $1', [slug]],
+  ]);
+  return true;
+}
+
 export async function setStatus(slug, status, publishedAt) {
   const rows = await sql(
     `update posts set status = $2, published_at = coalesce($3, published_at)
@@ -347,3 +474,127 @@ export async function restoreRevision(slug, revisionId) {
   if (!rows.length) throw new Error(`No revision ${revisionId} for "${slug}".`);
   return postBySlug(slug);
 }
+
+/* ==========================================================================
+   Site content blocks
+
+   The marketing pages' content: nav, footer, features, channels, stages,
+   audiences, integrations, FAQs, the comparison matrix, trust points, topic
+   clusters, site config and the cross-page related links.
+
+   A block is a whole JSON document keyed by the name the templates import it
+   under, so `allBlocks()` is one round trip for the entire site. An absent key
+   means "the repository default applies" — see src/data/overrides.mjs —
+   deleting a row is a reset, not a deletion of content.
+   ========================================================================== */
+
+/**
+ * jsonb comes back parsed over the HTTP endpoint, but a string is returned for
+ * some column/driver combinations. Accept either rather than depending on it.
+ */
+const parseValue = (v) => {
+  if (typeof v !== 'string') return v;
+  try {
+    return JSON.parse(v);
+  } catch {
+    return v;
+  }
+};
+
+/** Every override, as { key: value }. One query, whole site. */
+export async function allBlocks() {
+  const rows = await sql('select key, value from content_blocks');
+  return Object.fromEntries(rows.map((r) => [r.key, parseValue(r.value)]));
+}
+
+/** Overrides with their metadata, for the admin's list view. */
+export const blockRows = () =>
+  sql('select key, note, updated_at from content_blocks order by key');
+
+export async function blockByKey(key) {
+  const rows = await sql('select key, value, note, updated_at from content_blocks where key = $1', [key]);
+  if (!rows.length) return null;
+  return { ...rows[0], value: parseValue(rows[0].value) };
+}
+
+export async function saveBlock(key, value, note = null) {
+  if (!key) throw new Error('A content block needs a key.');
+  if (value === undefined) throw new Error(`No value given for content block "${key}".`);
+  await sql(
+    `insert into content_blocks (key, value, note) values ($1, $2::jsonb, $3)
+     on conflict (key) do update set value = excluded.value, note = excluded.note`,
+    [key, JSON.stringify(value), note]
+  );
+  return key;
+}
+
+/** Reset: drop the override so the repository default applies again. */
+export async function deleteBlock(key) {
+  const rows = await sql('delete from content_blocks where key = $1 returning key', [key]);
+  return rows.length > 0;
+}
+
+/* ==========================================================================
+   Authors and categories
+
+   Both are referenced by posts with `on delete restrict`, so a delete that
+   would orphan a post is refused by the database. That error is turned into a
+   sentence someone can act on rather than passed through raw.
+   ========================================================================== */
+
+export async function deleteAuthor(slug) {
+  const [used] = await sql(
+    'select count(*) as c from posts p join authors a on a.id = p.author_id where a.slug = $1',
+    [slug]
+  );
+  if (Number(used.c) > 0) {
+    throw new Error(
+      `"${slug}" is the author of ${used.c} post${used.c === '1' ? '' : 's'}. ` +
+        'Reassign them before deleting the author.'
+    );
+  }
+  const rows = await sql('delete from authors where slug = $1 returning id', [slug]);
+  return rows.length > 0;
+}
+
+export async function deleteCategory(slug) {
+  const [used] = await sql(
+    'select count(*) as c from posts p join categories c on c.id = p.category_id where c.slug = $1',
+    [slug]
+  );
+  if (Number(used.c) > 0) {
+    throw new Error(
+      `${used.c} post${used.c === '1' ? '' : 's'} are in "${slug}". ` +
+        'Move them to another category before deleting it.'
+    );
+  }
+  const rows = await sql('delete from categories where slug = $1 returning id', [slug]);
+  return rows.length > 0;
+}
+
+export const authorBySlug = async (slug) => {
+  const rows = await sql('select * from authors where slug = $1', [slug]);
+  return rows[0] || null;
+};
+
+export const categoryBySlug = async (slug) => {
+  const rows = await sql('select * from categories where slug = $1', [slug]);
+  return rows[0] || null;
+};
+
+/** Post counts per author and per category, for the admin's list views. */
+export const authorUsage = async () =>
+  Object.fromEntries(
+    (
+      await sql(`select a.slug, count(p.id) as c from authors a
+                   left join posts p on p.author_id = a.id group by a.slug`)
+    ).map((r) => [r.slug, Number(r.c)])
+  );
+
+export const categoryUsage = async () =>
+  Object.fromEntries(
+    (
+      await sql(`select c.slug, count(p.id) as c from categories c
+                   left join posts p on p.category_id = c.id group by c.slug`)
+    ).map((r) => [r.slug, Number(r.c)])
+  );

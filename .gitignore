@@ -13,3 +13,5 @@ data/*.db-shm
 
 # Build-time content cache
 data/content-cache.json
+data/pricing-cache.json
+data/site-cache.json

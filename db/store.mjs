@@ -32,8 +32,77 @@ const sqliteStore = async () => {
     upsertAuthor: wrap(lite.upsertAuthor),
     upsertCategory: wrap(lite.upsertCategory),
     stats: wrap(lite.stats),
+    // See the note above planless(): the mirror holds content, not pricing.
+    ...planless('the local SQLite mirror'),
+    ...blockless('the local SQLite mirror'),
+    ...undeletable('the local SQLite mirror'),
   };
 };
+
+/**
+ * The plan half of the API for a store that does not carry pricing.
+ *
+ * allPlans returning [] is not an error — it is how the build is told to use
+ * the defaults in src/data/site.mjs. Writes throw, because silently dropping an
+ * edit someone just typed into the admin would be worse than refusing it.
+ */
+const planless = (what) => ({
+  allPlans: async () => [],
+  planBySlug: async () => null,
+  savePlan: async () => {
+    throw new Error(
+      `Pricing plans are stored in Postgres, and this session is using ${what}.\n` +
+        '  Set DATABASE_URL in .env, then: npm run neon:setup && npm run plans:push'
+    );
+  },
+  deletePlan: async () => {
+    throw new Error(`Pricing plans are stored in Postgres, and this session is using ${what}.`);
+  },
+  setPlanFeatured: async () => {
+    throw new Error(`Pricing plans are stored in Postgres, and this session is using ${what}.`);
+  },
+});
+
+/**
+ * The site-content half of the API for a store that does not carry it.
+ *
+ * Same reasoning as planless(): reading returns nothing, which the build reads
+ * as "use the defaults that ship in src/data/*.defaults.mjs", while a write
+ * throws rather than silently discarding something someone just typed.
+ */
+const blockless = (what) => ({
+  allBlocks: async () => ({}),
+  blockRows: async () => [],
+  blockByKey: async () => null,
+  saveBlock: async () => {
+    throw new Error(
+      `Site content blocks are stored in Postgres, and this session is using ${what}.
+` +
+        '  Set DATABASE_URL in .env, then: npm run neon:setup'
+    );
+  },
+  deleteBlock: async () => {
+    throw new Error(`Site content blocks are stored in Postgres, and this session is using ${what}.`);
+  },
+});
+
+/**
+ * Author and category reads that only the Postgres layer implements, plus the
+ * deletes. The reads degrade to empty rather than throwing, so the admin can
+ * still list what the other stores do expose.
+ */
+const undeletable = (what) => ({
+  deleteAuthor: async () => {
+    throw new Error(`Deleting authors needs Postgres; this session is using ${what}.`);
+  },
+  deleteCategory: async () => {
+    throw new Error(`Deleting categories needs Postgres; this session is using ${what}.`);
+  },
+  authorBySlug: async () => null,
+  categoryBySlug: async () => null,
+  authorUsage: async () => ({}),
+  categoryUsage: async () => ({}),
+});
 
 const supabaseStore = (sb) => ({
   ready: () => sb.ping(),
@@ -50,6 +119,10 @@ const supabaseStore = (sb) => ({
   allAuthors: sb.allAuthors,
   upsertAuthor: sb.upsertAuthor,
   upsertCategory: sb.upsertCategory,
+  // The Supabase adapter has no pricing tables; Neon is where plans live.
+  ...planless('Supabase'),
+  ...blockless('Supabase'),
+  ...undeletable('Supabase'),
   stats: sb.stats,
 });
 
@@ -69,6 +142,22 @@ const neonStore = (n) => ({
   upsertAuthor: n.upsertAuthor,
   upsertCategory: n.upsertCategory,
   stats: n.stats,
+  allPlans: n.allPlans,
+  planBySlug: n.planBySlug,
+  savePlan: n.savePlan,
+  deletePlan: n.deletePlan,
+  setPlanFeatured: n.setPlanFeatured,
+  allBlocks: n.allBlocks,
+  blockRows: n.blockRows,
+  blockByKey: n.blockByKey,
+  saveBlock: n.saveBlock,
+  deleteBlock: n.deleteBlock,
+  deleteAuthor: n.deleteAuthor,
+  deleteCategory: n.deleteCategory,
+  authorBySlug: n.authorBySlug,
+  categoryBySlug: n.categoryBySlug,
+  authorUsage: n.authorUsage,
+  categoryUsage: n.categoryUsage,
 });
 
 let api;
@@ -138,4 +227,20 @@ export const {
   upsertAuthor,
   upsertCategory,
   stats,
+  allPlans,
+  planBySlug,
+  savePlan,
+  deletePlan,
+  setPlanFeatured,
+  allBlocks,
+  blockRows,
+  blockByKey,
+  saveBlock,
+  deleteBlock,
+  deleteAuthor,
+  deleteCategory,
+  authorBySlug,
+  categoryBySlug,
+  authorUsage,
+  categoryUsage,
 } = api;

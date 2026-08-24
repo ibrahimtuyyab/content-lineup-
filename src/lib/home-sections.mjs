@@ -20,10 +20,10 @@ import {
   aiDemo,
   accountTree,
   homeNiches,
-  plans,
   screens,
   workflowCompare,
 } from '../data/site.mjs';
+import { plans } from '../data/pricing.mjs';
 
 /* ==========================================================================
    01 — Hero + the lineup board

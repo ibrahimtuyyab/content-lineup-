@@ -15,6 +15,8 @@ import {
   breadcrumbSchema,
 } from '../lib/html.mjs';
 import { relatedFor } from '../data/links.mjs';
+// The JSON-LD offers must quote the live prices, not the seed defaults.
+import { plans } from '../data/pricing.mjs';
 import {
   relatedLinks,
   shot,
@@ -32,7 +34,6 @@ import {
   features,
   stages,
   steps,
-  plans,
   pricingFaqs,
   screens,
   screenOrder,

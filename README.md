@@ -11,7 +11,7 @@ writes a complete `dist/` you can host anywhere.
 npm run build     # renders dist/
 npm run serve     # serves dist/ at http://localhost:8080
 npm start         # build + serve
-npm run admin     # content editor at http://127.0.0.1:8081
+npm run admin     # content editor at http://127.0.0.1:8081 (asks you to sign in)
 npm run audit     # overflow / links / console / load-time check against a running server
 npm run fonts     # re-subset the web fonts (only when assets/fonts-src/ changes)
 ```
@@ -98,9 +98,17 @@ src/
   styles.css           Design system + all component styles
   app.js               Nav, reveals, lineup board, scroll tour, demos, tabs, counters
   data/
-    site.mjs           Brand, nav, stages, channels, features, audiences, pricing, FAQs,
+    site.defaults.mjs  The content that ships in the repository: brand, nav, stages,
+                       channels, features, audiences, pricing, FAQs, comparison matrix,
                        demo data for the interactive sections, topic clusters
+    links.defaults.mjs Editorial cross-links between the marketing pages
+    site.mjs           site.defaults.mjs with the admin's edits laid over it — what
+                       every page imports
+    links.mjs          links.defaults.mjs, same treatment
+    overrides.mjs      Loads the edits: Neon → data/site-cache.json → no edits at all
+    content-blocks.mjs The register of what is editable, and the merged result
     content.mjs        The site's read-only view of the content database
+    pricing.mjs        The site's read-only view of the pricing plans
   lib/
     html.mjs           Page shell, SEO head, JSON-LD, header/footer, primitives
     home-sections.mjs  The homepage, section by section
@@ -128,10 +136,16 @@ db/
   migrate.mjs          Build the local mirror
   seed.mjs             Seed the local mirror from the launch articles
   seed-content/        Launch articles as modules (import payload only)
-admin.mjs              Local web editor for the database
+admin.mjs              Local web editor: posts, plans, site content, authors
+admin/
+  auth.mjs             The login: password hashing, session cookie, sign-in page
+  form.mjs             Builds a form from a content block's shape, and parses it back
+  validate.mjs         Per-block checks that run before any content is written
+  content-views.mjs    The site-content and authors/categories pages
 .env                   Supabase credentials (gitignored)
 data/content.db        Local SQLite mirror / offline fallback
 data/content-cache.json  Last successful Supabase fetch (gitignored)
+data/site-cache.json     Last successful content_blocks fetch (gitignored)
 content/               Scratch folder for draft files awaiting import
 tools/
   make-og.mjs          Regenerates the OG cards (needs Chrome; output is committed)
@@ -140,6 +154,10 @@ tools/
   inspect.mjs          Section-by-section screenshots + overflow report, any page/width
   interact.mjs         Drives every homepage interaction in a real browser and reports
   mock-postgrest.mjs   Supabase test double for local end-to-end testing
+  admin-password.mjs   Sets or rotates the admin login
+  test-admin-form.mjs  Round-trips every content block through its form
+  test-admin-auth.mjs  The login, checked without a server
+  test-admin-routes.mjs  End-to-end check of the admin, against a running server
 ```
 
 ## Design system
@@ -159,11 +177,19 @@ for timestamps, queue states, keywords and API/technical UI.
 
 ## Content
 
-Editing content rarely means touching markup:
+Editing content rarely means touching markup, and mostly does not mean touching
+the repository either:
 
-- **Stages, channels, features, audiences, pricing, FAQs, comparison matrix, topic
-  clusters, and the demo data behind every interactive section** — `src/data/site.mjs`
+- **Everything on the marketing pages** — the nav, the footer, features, channels,
+  workflow stages, audiences, integrations, FAQs, the comparison matrix, trust
+  points, topic clusters, the site identity and the demo data behind every
+  interactive section — is editable in the admin under **Site content**
+  (`npm run admin`). See **Editing the site content** below.
 - **Articles** — in the content database. See **Content database** below.
+- **Pricing plans** — in the database too, under **Pricing** in the admin.
+- **The shipped defaults** for all of the above live in `src/data/site.defaults.mjs`
+  and `src/data/links.defaults.mjs`. Edit those to change what a clone builds with
+  no database; edit the admin to change what this site publishes.
 - **Adding a page** — write a render function and add one line to `routes` in `build.mjs`.
 - **The SEO plan** — `docs/seo-content-plan.md` holds the keyword → page map and the
   editorial queue. Nothing in that queue is written yet, and the site never links to
@@ -175,11 +201,145 @@ When WordPress publishing (or any other roadmap item) goes live, flip it in one
 place and the whole site updates — the homepage band, the features page, the FAQ,
 the comparison tables and `llms.txt`:
 
+In the admin: **Site content → Publishing channels**, set `status` to `live`, and
+**Site content → Features**, clear **Coming soon**. Or, to change what ships in the
+repository rather than what this database publishes:
+
 ```js
-// src/data/site.mjs
+// src/data/site.defaults.mjs
 { id: 'wordpress', name: 'WordPress', status: 'soon' }   // → 'live'
 { id: 'wordpress', name: 'Publish to WordPress', soon: true }  // → delete the flag
 ```
+
+Either way it is one place, and the whole site follows.
+
+## The admin login
+
+`npm run admin` asks for a username and password before it shows anything.
+
+Loopback binding keeps the network out; the login is for the other half of the
+problem — a browser tab left open, or anyone else who sits down at the machine.
+
+```bash
+npm run admin:password              # prompts, hidden, then writes .env
+npm run admin:password -- --user me # set the username at the same time
+```
+
+The password is never written down. `.env` holds `ADMIN_PASSWORD_HASH`, a scrypt
+hash of it, and `.env` is gitignored — so it stays out of the repository, out of
+diffs, and out of shell history (the tool prompts rather than taking an argument).
+
+| `.env` key | What it does |
+|---|---|
+| `ADMIN_USER` | The username |
+| `ADMIN_PASSWORD_HASH` | scrypt hash of the password — never the password |
+| `ADMIN_SESSION_SECRET` | Signs the session cookie. Rotate it to sign every session out |
+
+Leave `ADMIN_USER` and `ADMIN_PASSWORD_HASH` blank and the admin runs with no
+login, exactly as it did before. It prints which mode it is in on startup, so
+that is never a silent state.
+
+Some details worth knowing:
+
+- **Sessions last 12 hours**, in a signed `HttpOnly`, `SameSite=Strict` cookie.
+  There is no session table: the cookie carries its own expiry with an HMAC over
+  it, so an edited or expired cookie fails the same check.
+- **No `Secure` flag**, because the admin is http on loopback and a Secure cookie
+  would never be stored. `SameSite=Strict` is what covers the cross-site case.
+- **Leave `ADMIN_SESSION_SECRET` blank** and one is generated per start — which
+  works, but signs you out on every restart.
+- **Eight wrong attempts locks the login for 15 minutes**, per process.
+- **A wrong username and a wrong password give the same message**, and take the
+  same time, so the form does not tell an attacker which half they got right.
+
+```bash
+npm run test:admin:auth   # hashing, session forgery, redirect targets — no server needed
+```
+
+This is still an authoring tool, not a deployed service. The login makes it safe
+to leave running on your own machine; it is not a reason to expose the port.
+
+## Editing the site content
+
+`npm run admin` → **Site content**. Twenty-seven blocks, grouped by where they
+appear: Global, Homepage, Product, Audiences, Support.
+
+### How an edit reaches the site
+
+The shipped content is in `src/data/site.defaults.mjs` and never changes when you
+edit. What the admin writes is an override row in the `content_blocks` table, and
+`src/data/site.mjs` lays those over the defaults on every build:
+
+```
+src/data/site.defaults.mjs   the content that ships in the repository
+        ↓  overridden by
+content_blocks (Neon)        only the blocks someone edited
+        ↓  cached to
+data/site-cache.json         last successful fetch, for an offline build
+        ↓
+src/data/site.mjs            what every page imports — unchanged import path
+```
+
+Three consequences worth knowing:
+
+- **A clone with no database still builds the real site.** Nothing is fetched that
+  is not already in the repository as a default.
+- **Reset is real.** It deletes the override row, and the shipped content applies
+  again. The admin marks which blocks are currently edited, so you can always see
+  what a reset would undo.
+- **A field added to the defaults later still appears**, even on a block that was
+  edited before that field existed: objects merge key by key. Lists replace
+  wholesale, because otherwise deleting the last item would be impossible.
+
+Edits are saved to the database immediately. They reach `dist/` on the next
+**Rebuild site**.
+
+### The form is derived from the content
+
+There is no hand-written form per block. `admin/form.mjs` builds the form from the
+shape of the block's default and parses the submission back through the same
+shape, so a field added to `src/data/site.defaults.mjs` shows up in the admin with
+no work. Lists get Add, Remove and reorder buttons; those apply to the form and
+hand it back unsaved, so no button ever writes anything on its own.
+
+Every block also has an **Edit as JSON** view. It is the escape hatch for the
+handful of blocks keyed by name rather than ordered by position — the screen
+captions and the related links — where adding a whole new entry has no button.
+
+### What is refused
+
+`admin/validate.mjs` runs on every save. It refuses the changes that would break
+the published site rather than letting the build fall over later:
+
+- a screen id with no renderer (`npm run build` would crash drawing it)
+- a comparison row with the wrong number of values or notes for its columns
+- an integration in a group that does not exist, which would silently vanish
+- removing an integration group, or a screen, that something else still points at
+- an empty required field, a duplicate id, a malformed URL
+
+Anything that is merely questionable — a topic cluster with no posts, a tour
+longer than the homepage was designed for — is saved and reported as a warning.
+
+```bash
+npm run test:admin        # render/parse symmetry over all 27 blocks
+npm run test:admin:auth   # the login: hashing, session forgery, redirect targets
+npm run test:admin:e2e    # end-to-end, against a running admin
+
+# The e2e suite signs in, so it needs the password — from the environment,
+# never from a file in the repository:
+ADMIN_TEST_PASSWORD=... npm run test:admin:e2e
+```
+
+The first one matters more than it looks: it submits every block's form untouched
+and asserts the result is byte-identical to what went in. A form that cannot
+survive that would quietly rewrite the site's content on the first save.
+
+### Authors and categories
+
+**Authors** in the admin. Both are real tables that posts point at with
+`on delete restrict`, so the admin shows a post count and hides Delete on anything
+still in use. Renaming a category that holds posts is refused too — the slug is
+part of every article URL in it, and nothing would redirect the old ones.
 
 ## Content database (Supabase)
 
@@ -228,7 +388,7 @@ set of posts without having to filter anything itself.
 
 **1. The admin UI** — `npm run admin`, then **New post**. A form for every field,
 a shortcode reference built into the page, and a **Rebuild site** button. Bound to
-loopback with no authentication, because it is a local authoring tool.
+loopback and behind a login — see **The admin login** below.
 
 **2. A file** — write markdown with front-matter, then import it:
 
@@ -379,8 +539,8 @@ across them, so the product never looks like it has one customer.
 **To swap in real PNG captures:** drop files at `public/screens/<id>.png` and set
 `SCREEN_EXT = 'png'` in `src/lib/screens.mjs`. Every reference across the site —
 homepage tour, features page, articles, resources — resolves through `screenSrc()`,
-so nothing else needs editing. Captions and alt text live in `screens` in
-`src/data/site.mjs` and stay as they are.
+so nothing else needs editing. Captions and alt text are editable in the
+admin under **Site content → Product screen captions** and stay as they are.
 
 This is the single highest-value follow-up on the whole site: the SVGs are a good
 likeness, but real captures of the actual app would be better, and swapping them in
@@ -528,21 +688,28 @@ pm2 start serve.mjs --name contentlineup-site && pm2 save && pm2 startup
 
 ### Before going live
 
-1. Set the real domain in `site.origin` (`src/data/site.mjs`) — it drives canonicals,
-   OG URLs, JSON-LD `@id`s, the sitemap and the feed.
-2. Confirm the pricing figures in `plans` (`src/data/site.mjs`). The tier structure is
+Items 1, 2b, 4, 4b and 4c are all in the admin now — `npm run admin` → **Site
+content** — and take effect on the next rebuild without a code change. Change them
+in `src/data/site.defaults.mjs` instead if you want them to be what a fresh clone
+builds with no database.
+
+1. Set the real domain in **Site identity → origin** — it drives canonicals, OG
+   URLs, JSON-LD `@id`s, the sitemap and the feed. Saving is refused if it is not a
+   full URL, since a broken origin is invisible until it is on every page.
+2. Confirm the pricing figures under **Pricing** in the admin. The tier structure is
    in place; the numbers are a starting proposal.
-2b. Re-check the `status` flags on `channels` and the `soon` flags on `features`
-   against what the app actually does today. The site is only as honest as they are.
+2b. Re-check `status` under **Publishing channels** and **Coming soon** under
+   **Features** against what the app actually does today. The site is only as honest
+   as they are.
 3. Swap in real dashboard PNGs if you want photographic captures (see above).
-4. Point `site.app.signup` / `site.app.login` at the live signup and login URLs.
-4b. **Set `site.app.demo`** (`src/data/site.mjs`) to your real Cal.com/Calendly booking
-   link. It currently holds a placeholder, and "Book a demo" is the highest-intent
-   button on the site — a dead link there is the most expensive dead link there is.
-4c. **Set `analytics.domain`** (`src/data/site.mjs`) to the site as registered in your
-   Plausible dashboard. If it does not match exactly, every event is dropped silently
-   and the funnel looks empty rather than broken. Set `analytics.enabled = false` to
-   ship without any analytics at all.
+4. Point **Site identity → app.signup / app.login** at the live signup and login URLs.
+4b. **Set `app.demo`** to your real Cal.com/Calendly booking link. It currently holds
+   a placeholder, and "Book a demo" is the highest-intent button on the site — a dead
+   link there is the most expensive dead link there is.
+4c. **Set the analytics domain** to the site as registered in your Plausible
+   dashboard. If it does not match exactly, every event is dropped silently and the
+   funnel looks empty rather than broken. Turn **enabled** off to ship without any
+   analytics at all.
    Plausible ignores `localhost` by design, so CTA events only appear once deployed.
 5. Put `SUPABASE_URL` and `SUPABASE_ANON_KEY` into your host's environment variables so
    the deploy build reads live content. The service_role key is not needed to build.
@@ -563,10 +730,10 @@ Open the **Network** URL on any device on the same Wi-Fi.
 - `PORT=3000 npm run serve` changes the port.
 - Windows may prompt to allow `node.exe` through the firewall the first time —
   allow it for the network profile you are on.
-- **The admin UI is deliberately not exposed.** It binds to `127.0.0.1` only,
-  because it has no authentication and can edit and delete content. Reach it from
-  this machine at http://127.0.0.1:8081, or use an SSH tunnel — do not rebind it
-  to `0.0.0.0`.
+- **The admin UI is deliberately not exposed.** It binds to `127.0.0.1` only.
+  It has a login, but it also edits and deletes content over plain http, so the
+  password would cross the network in the clear. Reach it from this machine at
+  http://127.0.0.1:8081, or use an SSH tunnel — do not rebind it to `0.0.0.0`.
 - If a device on the same Wi-Fi still cannot connect, the network itself may have
   client isolation enabled (common on guest and public Wi-Fi), which blocks
   device-to-device traffic regardless of firewall settings.

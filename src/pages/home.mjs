@@ -13,7 +13,9 @@ import {
   resourceStrip,
 } from '../lib/home-sections.mjs';
 import { faqSection, keyModesSection } from '../lib/blocks.mjs';
-import { homeFaqs, plans, stages } from '../data/site.mjs';
+import { homeFaqs, stages } from '../data/site.mjs';
+// The JSON-LD offers must quote the live prices, not the seed defaults.
+import { plans } from '../data/pricing.mjs';
 import { posts, featured } from '../data/content.mjs';
 import { abs } from '../lib/html.mjs';
 import { screenSrc } from '../lib/screens.mjs';

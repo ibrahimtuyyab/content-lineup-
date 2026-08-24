@@ -7,7 +7,8 @@ import { createHash } from 'node:crypto';
 
 import { setAssets } from './src/lib/assets.mjs';
 
-import { site, screenOrder, plans, channels, comingSoon, stages } from './src/data/site.mjs';
+import { site, screenOrder, channels, comingSoon, stages } from './src/data/site.mjs';
+import { plans } from './src/data/pricing.mjs';
 import { renderScreen, SCREEN_EXT } from './src/lib/screens.mjs';
 import { posts } from './src/data/content.mjs';
 import home from './src/pages/home.mjs';

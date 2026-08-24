@@ -14,10 +14,12 @@ import {
   integrations,
   integrationGroups,
   comparison,
-  plans,
   screens,
   allFaqs,
 } from '../data/site.mjs';
+// Plans come from the database at build time, with the array in site.mjs as the
+// fallback. See src/data/pricing.mjs.
+import { plans } from '../data/pricing.mjs';
 
 /* ---------------------------------------------------------------------------
    Hero publishing queue

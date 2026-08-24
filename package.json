@@ -24,8 +24,13 @@
     "db:copy": "node db/copy-schema.mjs",
     "servers": "powershell -ExecutionPolicy Bypass -File tools/servers.ps1",
     "neon:setup": "node db/neon-setup.mjs",
+    "plans:push": "node db/plans-push.mjs",
     "neon:check": "node db/neon-check.mjs",
-    "fonts": "node tools/subset-fonts.mjs"
+    "fonts": "node tools/subset-fonts.mjs",
+    "test:admin": "node tools/test-admin-form.mjs",
+    "test:admin:e2e": "node tools/test-admin-routes.mjs",
+    "admin:password": "node tools/admin-password.mjs",
+    "test:admin:auth": "node tools/test-admin-auth.mjs"
   },
   "engines": {
     "node": ">=22.5"

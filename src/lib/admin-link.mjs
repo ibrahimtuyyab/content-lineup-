@@ -20,8 +20,19 @@
 // PowerShell and cmd, and this project carries no cross-env dependency.
 const flagged = process.argv.includes('--admin-link') || process.env.ADMIN_LINK === '1';
 
+/**
+ * On Vercel the admin is a serverless function at /admin (see api/admin.js and
+ * the rewrites in vercel.json), so it is there to be signed in to and the pages
+ * built there should say so. Nothing else about the build changes.
+ *
+ * Vercel sets VERCEL=1 during the build. Any other host runs `npm run build`
+ * with no such variable and keeps the original behaviour: no /login page, and
+ * Log in pointing straight at the product app.
+ */
+const onVercel = process.env.VERCEL === '1';
+
 /** Is the admin reachable from the pages this build produces? */
-export const adminLink = flagged;
+export const adminLink = flagged || onVercel;
 
 /** Where it lives, matching the mount in serve.mjs. */
 export const ADMIN_PATH = '/admin';

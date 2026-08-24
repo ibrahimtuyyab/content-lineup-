@@ -65,6 +65,7 @@ import {
 import { createAuth, loginView, safeNext, lockedFor } from './auth.mjs';
 import { BASE as B, u, strip } from './paths.mjs';
 import { LOGIN_PATH } from '../src/lib/admin-link.mjs';
+import { onVercel, deployHook, isSecureRequest } from './platform.mjs';
 
 // The repo root, one level up now that this lives in admin/. It is what the
 // font handler resolves against and the working directory the build runs in.
@@ -109,6 +110,19 @@ const ASSET_TYPES = {
 };
 const assetType = (file) => ASSET_TYPES[extname(file).toLowerCase()] || 'application/octet-stream';
 
+/**
+ * Where the admin's own fonts come from.
+ *
+ * Mounted, the site is on the same origin and already serves /fonts/ out of
+ * dist — so the admin borrows them and the /_asset/ route is never touched.
+ * That is what makes the deployed admin work: a serverless function ships the
+ * code it can be seen to import, not a public/ directory read at a path built
+ * at runtime, so reading the font off disk there would 404.
+ *
+ * Standalone there is no site next to it, and /_asset/ serves them from public/.
+ */
+const FONTS = B ? '/fonts' : '/_asset/fonts';
+
 const auth = createAuth();
 
 const esc = (s = '') =>
@@ -123,8 +137,8 @@ const CSS = `
 --amber:#b45309;--amber-soft:#fdf3e3;--cream:#efeae1;
 --sans:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;--serif:'Fraunces',Georgia,serif;
 --mono:ui-monospace,Consolas,Menlo,monospace}
-@font-face{font-family:'Inter';src:url('${B}/_asset/fonts/inter-latin.woff2') format('woff2');font-weight:100 900;font-display:swap}
-@font-face{font-family:'Fraunces';src:url('${B}/_asset/fonts/fraunces-latin.woff2') format('woff2');font-weight:100 900;font-display:swap}
+@font-face{font-family:'Inter';src:url('${FONTS}/inter-latin.woff2') format('woff2');font-weight:100 900;font-display:swap}
+@font-face{font-family:'Fraunces';src:url('${FONTS}/fraunces-latin.woff2') format('woff2');font-weight:100 900;font-display:swap}
 *{box-sizing:border-box}
 body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.6 var(--sans)}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
@@ -714,8 +728,28 @@ const loadEdit = async (post) => ({
 });
 
 /* ------------------------------------------------------------------ helpers */
-const readBody = (req) =>
-  new Promise((res, rej) => {
+/**
+ * The submitted form.
+ *
+ * Reads the request stream, except where something upstream has already read it
+ * for us: a serverless runtime commonly parses the body and hands it over as
+ * `req.body`, and the stream behind it is then finished. Waiting on 'end' there
+ * returns an empty form rather than the one that was filled in, and every save
+ * silently loses its content — so the parsed body wins when it is present.
+ */
+const readBody = (req) => {
+  if (req.body !== undefined && req.body !== null) {
+    if (typeof req.body === 'string') return Promise.resolve(new URLSearchParams(req.body));
+    if (Buffer.isBuffer(req.body)) return Promise.resolve(new URLSearchParams(req.body.toString('utf8')));
+    if (typeof req.body === 'object') {
+      const params = new URLSearchParams();
+      for (const [k, v] of Object.entries(req.body)) {
+        for (const one of Array.isArray(v) ? v : [v]) params.append(k, String(one));
+      }
+      return Promise.resolve(params);
+    }
+  }
+  return new Promise((res, rej) => {
     let data = '';
     req.on('data', (c) => {
       data += c;
@@ -724,6 +758,7 @@ const readBody = (req) =>
     req.on('end', () => res(new URLSearchParams(data)));
     req.on('error', rej);
   });
+};
 
 const slugify = (s) =>
   s.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-').replace(/-+/g, '-').slice(0, 70);
@@ -851,7 +886,7 @@ export const handler = async (req, res) => {
         return res.end();
       }
 
-      const result = auth.login(username, f.get('password'));
+      const result = auth.login(username, f.get('password'), { secure: isSecureRequest(req) });
       if (!result.ok) {
         // Back to whichever form was used, so a typo is corrected where it was
         // made. The site's page reads the reason off the fragment (CSS :target,
@@ -871,7 +906,10 @@ export const handler = async (req, res) => {
     }
 
     if (method === 'POST' && path === '/logout') {
-      res.writeHead(303, { Location: u('/login'), 'Set-Cookie': auth.logoutCookie() });
+      res.writeHead(303, {
+        Location: u('/login'),
+        'Set-Cookie': auth.logoutCookie({ secure: isSecureRequest(req) }),
+      });
       return res.end();
     }
 
@@ -1302,10 +1340,37 @@ export const handler = async (req, res) => {
     }
 
     if (method === 'POST' && path === '/build') {
+      // Deployed, there is no build to run: the filesystem is read-only, the
+      // source is not there, and the pages are already on a CDN. What republishes
+      // an edit is a new deployment, so the button asks for one.
+      if (onVercel) {
+        if (!deployHook) {
+          return redirect(
+            res,
+            `/?err=${encodeURIComponent(
+              'Saved — but this deployment has no way to republish itself. Add a deploy hook ' +
+                '(Vercel → Settings → Git → Deploy Hooks) as VERCEL_DEPLOY_HOOK_URL, or redeploy by hand.'
+            )}`
+          );
+        }
+        try {
+          const hooked = await fetch(deployHook, { method: 'POST' });
+          if (!hooked.ok) throw new Error(`the hook answered ${hooked.status}`);
+          return redirect(
+            res,
+            `/?ok=${encodeURIComponent(
+              'Rebuild requested. Vercel is deploying; the change is live once it finishes, usually a minute or two.'
+            )}`
+          );
+        } catch (err) {
+          return redirect(res, `/?err=${encodeURIComponent(`Could not ask Vercel to rebuild: ${err.message}`)}`);
+        }
+      }
+
       const out = await new Promise((done) => {
         // Mounted inside the site server, the site being rebuilt is one that
-        // is served with the admin attached — so it keeps the footer link to
-        // it. Without this, pressing Rebuild removed the only way back here.
+        // is served with the admin attached — so it keeps the link to it.
+        // Without this, pressing Rebuild removed the only way back here.
         const args = ['build.mjs', ...(B ? ['--admin-link'] : [])];
         const child = spawn(process.execPath, args, { cwd: ROOT });
         let buf = '';
@@ -1344,6 +1409,14 @@ export const describeAuth = () =>
         : '')
     : `Login:                off (${auth.reason})\n` +
       '                      Turn it on with: npm run admin:password';
+
+/**
+ * Is a login configured?
+ *
+ * Exported so the serverless entry can refuse to serve without one. Locally an
+ * unconfigured login means 'no login'; on a public URL it would mean 'no lock'.
+ */
+export const authEnabled = () => auth.enabled;
 
 export const describeStore = () => `${driver} → ${target}`;
 

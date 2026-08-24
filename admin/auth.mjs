@@ -188,7 +188,7 @@ export function createAuth(env = process.env) {
     isUser: (name) => sameString(name || '', user),
 
     /** @returns {{ok: true, cookie: string} | {ok: false, error: string}} */
-    login(name, password) {
+    login(name, password, { secure = false } = {}) {
       const mins = lockedFor();
       if (mins) {
         return { ok: false, error: `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.` };
@@ -202,20 +202,25 @@ export function createAuth(env = process.env) {
         return { ok: false, error: 'That username and password do not match.' };
       }
       attempts.count = 0;
-      return { ok: true, cookie: cookieHeader(mint(key, user)) };
+      return { ok: true, cookie: cookieHeader(mint(key, user), { secure }) };
     },
 
-    logoutCookie: () => cookieHeader('', 0),
+    logoutCookie: ({ secure = false } = {}) => cookieHeader('', { secure, maxAge: 0 }),
   };
 }
 
 /**
  * Set-Cookie for the session.
  *
- * No `Secure`, because the admin is served over http on loopback and a Secure
- * cookie would simply never be stored. `SameSite=Strict` is what stops another
- * site on the machine's browser posting to these routes with the cookie
- * attached, which is the only cross-site risk a loopback tool really has.
+ * `Secure` follows the connection rather than being fixed either way. Deployed,
+ * the session travels over HTTPS and must never be allowed onto plain http.
+ * Locally the admin *is* plain http on loopback, and a Secure cookie there is
+ * silently dropped by the browser — the login would appear to succeed and then
+ * not have happened, which is a miserable thing to debug. So it is decided per
+ * request, from the proxy's own header.
+ *
+ * `SameSite=Strict` stops another site in the same browser posting to these
+ * routes with the cookie attached, on either connection.
  *
  * `Path` follows the mount. Sharing an origin with the marketing site is the
  * whole point of mounting it under /admin, and a session cookie scoped to `/`
@@ -223,8 +228,9 @@ export function createAuth(env = process.env) {
  * the public side of that origin — for no reason, since only the admin ever
  * reads it.
  */
-const cookieHeader = (value, maxAge = SESSION_HOURS * 3600) =>
-  `${COOKIE}=${encodeURIComponent(value)}; Path=${B || '/'}; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
+const cookieHeader = (value, { secure = false, maxAge = SESSION_HOURS * 3600 } = {}) =>
+  `${COOKIE}=${encodeURIComponent(value)}; Path=${B || '/'}; HttpOnly; SameSite=Strict` +
+  `${secure ? '; Secure' : ''}; Max-Age=${maxAge}`;
 
 /* ---------------------------------------------------------------- login page */
 

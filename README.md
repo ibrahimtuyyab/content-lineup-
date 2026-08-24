@@ -139,8 +139,12 @@ db/
   migrate.mjs          Build the local mirror
   seed.mjs             Seed the local mirror from the launch articles
   seed-content/        Launch articles as modules (import payload only)
+api/
+  admin.js             The editor as a Vercel function — the deployed entry point
 admin/                 The editor: posts, plans, site content, authors
   paths.mjs            Where the admin is mounted; the prefix every link carries
+  platform.mjs         Local or deployed, and what that changes
+  test-vercel.mjs      Reproduces the deployment on this machine
   server.mjs           The HTTP server, the page chrome, the post and plan editors
   auth.mjs             The login: password hashing, session cookie, sign-in page
   form.mjs             Builds a form from a content block's shape, and parses it back
@@ -240,6 +244,8 @@ admin **dynamically and only with `--admin`**: the Docker image copies
 | `npm run serve` | site only, port 8080 | 404 | no | the product app |
 | `npm run admin` | editor only, port 8081 | — | — | — |
 | `npm run build` | *(build only)* | — | no | the product app |
+| **on Vercel** | site on the CDN, editor as a function | yes | yes | `/login` |
+| `npm run vercel:local` | the deployment, reproduced on port 8090 | yes | yes | `/login` |
 
 ### The sign-in page
 
@@ -321,6 +327,73 @@ static files that never touch it — and `/admin` alone reports the problem.
 `npm start` binds `0.0.0.0` so you can check the site from a phone, which means
 `/admin` is reachable from the network too, over plain http. The server says so
 on startup. `HOST=127.0.0.1 npm start` keeps it to this machine.
+
+## Deploying with the editor
+
+On Vercel the site is still the static `dist/` on a CDN. The editor is one
+serverless function, `api/admin.js`, and `vercel.json` rewrites `/admin` and
+`/admin/*` to it. Nothing else on the domain touches it.
+
+### What you have to set
+
+Environment variables, in Project → Settings → Environment Variables:
+
+| | |
+|---|---|
+| `DATABASE_URL` | already there if Neon is connected — the editor reads and writes through it |
+| `ADMIN_USER` | the username |
+| `ADMIN_PASSWORD_HASH` | `npm run admin:password -- --print` prints this and the next one |
+| `ADMIN_SESSION_SECRET` | signs the session cookie |
+| `VERCEL_DEPLOY_HOOK_URL` | optional; see below |
+
+**Without the login variables the deployed admin refuses to serve at all** — a
+503 telling you to set them. Locally an unconfigured login means "no login",
+which is a reasonable default for a tool bound to loopback; on a public URL it
+would mean an unauthenticated editor for the content database, so there it is a
+refusal rather than a convenience.
+
+### Publishing an edit
+
+The site is built once per deployment, so an edit reaches the database
+immediately and the pages people read on the next build. **Rebuild site** asks
+for one: create a hook at Project → Settings → Git → Deploy Hooks and put the
+URL in `VERCEL_DEPLOY_HOOK_URL`. Without it the button says so plainly rather
+than appearing to work.
+
+### What changes once it is deployed
+
+The editor is reachable from the internet, behind one password. Worth knowing:
+
+- The session cookie is `Secure` on HTTPS and not on plain http, decided per
+  request from `x-forwarded-proto` — a Secure cookie on a local http origin is
+  silently dropped by the browser, which looks exactly like a broken login.
+- `/admin` and `/login` are sent `no-store` and `X-Robots-Tag: noindex`.
+- Eight wrong attempts still lock the login, but per *instance*: serverless
+  scales out, so that is a speed bump rather than a wall. The password is the
+  thing carrying the weight — make it a long one.
+- Anything you do not want internet-reachable should stay on `npm start`, which
+  is unchanged.
+
+### Trying it before you deploy
+
+```bash
+npm run vercel:local     # http://127.0.0.1:8090
+```
+
+A deployment is the one configuration you cannot try before it is live, and it
+differs from local in ways that break quietly: the function is reached through a
+rewrite so `req.url` is not the path anyone asked for, the runtime hands the
+body over already parsed, and the connection is HTTPS behind a proxy. Each has a
+branch in the code that `npm start` never touches.
+
+So `admin/test-vercel.mjs` reproduces all three: it applies the rewrite from
+`vercel.json`, calls `api/admin.js` the way the platform does, pre-parses the
+body, and claims HTTPS through the same header. The end-to-end suite runs
+against it unchanged:
+
+```bash
+ADMIN_URL=http://127.0.0.1:8090/admin ADMIN_TEST_PASSWORD=... node admin/test-routes.mjs
+```
 
 ## The admin login
 

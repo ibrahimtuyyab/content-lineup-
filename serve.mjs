@@ -17,6 +17,7 @@ import { createServer } from 'node:http';
 import { createReadStream, existsSync, statSync, readFileSync } from 'node:fs';
 import { join, extname, resolve, normalize } from 'node:path';
 import { networkInterfaces } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { gzipSync, brotliCompressSync, constants } from 'node:zlib';
 
 const ROOT = resolve(import.meta.dirname, 'dist');
@@ -26,7 +27,16 @@ const HOST = process.env.HOST || '0.0.0.0';
 /** dist/, so a caller mounting this can check for it too. */
 export const DIST = ROOT;
 
-if (!existsSync(ROOT)) {
+/**
+ * True when this file was started directly.
+ *
+ * It exports `staticHandler` for callers that want to serve dist/ inside their
+ * own server, so loading it must not also start one of its own — importing a
+ * module should not take a port.
+ */
+const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isMain && !existsSync(ROOT)) {
   console.error('dist/ not found. Run `npm run build` first.');
   process.exit(1);
 }
@@ -222,7 +232,7 @@ async function loadAdmin() {
   return mod;
 }
 
-const wantsAdmin = process.argv.includes('--admin') || process.env.ADMIN === '1';
+const wantsAdmin = isMain && (process.argv.includes('--admin') || process.env.ADMIN === '1');
 
 let admin = null;
 let adminError = null;
@@ -260,9 +270,10 @@ const handler = (req, res) => {
 
 /* ------------------------------------------------------------------ listen */
 
-const server = createServer(handler);
+const server = isMain && createServer(handler);
 
-server.listen(PORT, HOST, () => {
+if (isMain)
+  server.listen(PORT, HOST, () => {
   console.log(`\nContentLineup is live — serving ${ROOT}\n`);
   console.log(`  Local    http://localhost:${PORT}`);
   if (HOST === '0.0.0.0' || HOST === '::') {
@@ -288,12 +299,14 @@ server.listen(PORT, HOST, () => {
   } else if (wantsAdmin) {
     console.log(`\n  Admin    failed to start — ${String(adminError?.message || '').split('\n')[0]}`);
   }
-  console.log('');
-});
-
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => {
-    console.log('\nShutting down…');
-    server.close(() => process.exit(0));
+    console.log('');
   });
+
+if (isMain) {
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, () => {
+      console.log('\nShutting down…');
+      server.close(() => process.exit(0));
+    });
+  }
 }

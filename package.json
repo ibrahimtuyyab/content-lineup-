@@ -30,7 +30,8 @@
     "test:admin": "node admin/test-form.mjs",
     "test:admin:e2e": "node admin/test-routes.mjs",
     "admin:password": "node admin/password.mjs",
-    "test:admin:auth": "node admin/test-auth.mjs"
+    "test:admin:auth": "node admin/test-auth.mjs",
+    "vercel:local": "node admin/test-vercel.mjs"
   },
   "engines": {
     "node": ">=22.5"

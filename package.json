@@ -7,13 +7,13 @@
   "scripts": {
     "build": "node build.mjs",
     "serve": "node serve.mjs",
-    "start": "node build.mjs && node serve.mjs",
-    "dev": "node build.mjs && node serve.mjs",
+    "start": "node build.mjs --admin-link && node serve.mjs --admin",
+    "dev": "node build.mjs --admin-link && node serve.mjs --admin",
     "db:schema": "node db/schema-print.mjs",
     "db:push": "node db/push.mjs",
     "db:check": "node db/cli.mjs check",
     "posts": "node db/cli.mjs",
-    "admin": "node admin.mjs",
+    "admin": "node admin/server.mjs",
     "mirror:init": "node db/migrate.mjs",
     "mirror:seed": "node db/seed.mjs",
     "og": "node tools/make-og.mjs",
@@ -27,10 +27,10 @@
     "plans:push": "node db/plans-push.mjs",
     "neon:check": "node db/neon-check.mjs",
     "fonts": "node tools/subset-fonts.mjs",
-    "test:admin": "node tools/test-admin-form.mjs",
-    "test:admin:e2e": "node tools/test-admin-routes.mjs",
-    "admin:password": "node tools/admin-password.mjs",
-    "test:admin:auth": "node tools/test-admin-auth.mjs"
+    "test:admin": "node admin/test-form.mjs",
+    "test:admin:e2e": "node admin/test-routes.mjs",
+    "admin:password": "node admin/password.mjs",
+    "test:admin:auth": "node admin/test-auth.mjs"
   },
   "engines": {
     "node": ">=22.5"

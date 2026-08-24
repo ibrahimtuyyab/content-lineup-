@@ -20,6 +20,7 @@
 // Every comparison that touches a secret is constant-time. It is unlikely to
 // matter over loopback, but "unlikely to matter" is how timing leaks survive.
 import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'node:crypto';
+import { BASE as B } from './paths.mjs';
 
 const COOKIE = 'cl_admin';
 const SESSION_HOURS = 12;
@@ -63,9 +64,21 @@ const sameString = (a, b) => {
 
 /* ------------------------------------------------------------------ session */
 
-const sign = (secret, payload) => createHmac('sha256', secret).update(payload).digest('hex');
+/**
+ * Sign a payload, tied to the admin that issued it.
+ *
+ * The mount goes into the signature but not into the cookie, so the cookie
+ * format is unchanged and a session simply fails to verify anywhere else.
+ *
+ * This matters because a cookie is scoped to a host and a path — never to a
+ * port. Running the editor on its own at localhost:8081 and mounted at
+ * localhost:8080/admin puts two different servers on one cookie namespace, and
+ * a session minted by either was cryptographically valid for the other: signing
+ * in once meant the second one waved you through without ever showing a login.
+ */
+const sign = (secret, payload) => createHmac('sha256', secret).update(`${payload}|${B}`).digest('hex');
 
-/** A signed cookie value: '<expiry ms>.<hmac>'. */
+/** A signed cookie value: '<user>.<expiry ms>.<hmac>'. */
 const mint = (secret, user) => {
   const payload = `${user}.${Date.now() + SESSION_HOURS * 3600_000}`;
   return `${payload}.${sign(secret, payload)}`;
@@ -86,12 +99,22 @@ const valid = (secret, user, cookie) => {
   return Number(until) > Date.now();
 };
 
-const readCookie = (req, name) => {
+/**
+ * Every cookie sent under this name, not just the first.
+ *
+ * A browser can hold more than one cookie of the same name at different paths —
+ * a `/` one from the editor running on its own, a `/admin` one from the editor
+ * mounted in the site — and it sends all the ones whose path matches, in an
+ * order the server does not control. Reading only the first would sign you out
+ * at random depending on which one the browser happened to list first.
+ */
+const readCookies = (req, name) => {
+  const out = [];
   for (const part of String(req.headers.cookie || '').split(';')) {
     const [k, ...rest] = part.trim().split('=');
-    if (k === name) return decodeURIComponent(rest.join('='));
+    if (k === name) out.push(decodeURIComponent(rest.join('=')));
   }
-  return '';
+  return out;
 };
 
 /* ------------------------------------------------- failed-attempt throttling */
@@ -149,7 +172,20 @@ export function createAuth(env = process.env) {
     ephemeralSecret: !secret,
     user,
 
-    isLoggedIn: (req) => valid(key, user, readCookie(req, COOKIE)),
+    isLoggedIn: (req) => readCookies(req, COOKIE).some((c) => valid(key, user, c)),
+
+    /**
+     * Is this name the admin's?
+     *
+     * Only for the site's combined sign-in form, which has to decide whether a
+     * submission is an admin logging in or a customer who should be sent to the
+     * product app. It does mean that form can tell you a username is not the
+     * admin's — which login() itself is careful never to reveal. That is a fair
+     * trade here and nowhere else: there is exactly one account, its name sits
+     * in .env on this machine, and the whole thing is bound to loopback. What
+     * stays hidden is the only part worth hiding — whether the password matched.
+     */
+    isUser: (name) => sameString(name || '', user),
 
     /** @returns {{ok: true, cookie: string} | {ok: false, error: string}} */
     login(name, password) {
@@ -180,9 +216,15 @@ export function createAuth(env = process.env) {
  * cookie would simply never be stored. `SameSite=Strict` is what stops another
  * site on the machine's browser posting to these routes with the cookie
  * attached, which is the only cross-site risk a loopback tool really has.
+ *
+ * `Path` follows the mount. Sharing an origin with the marketing site is the
+ * whole point of mounting it under /admin, and a session cookie scoped to `/`
+ * would then be attached to every request for a page, an image and a font on
+ * the public side of that origin — for no reason, since only the admin ever
+ * reads it.
  */
 const cookieHeader = (value, maxAge = SESSION_HOURS * 3600) =>
-  `${COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
+  `${COOKIE}=${encodeURIComponent(value)}; Path=${B || '/'}; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
 
 /* ---------------------------------------------------------------- login page */
 
@@ -209,7 +251,7 @@ export const loginView = (layout, { error, next } = {}) =>
        <h1>Sign in</h1>
        <p class="sub">The ContentLineup content admin.</p>
        ${error ? `<div class="flash err">${esc(error)}</div>` : ''}
-       <form method="post" action="/login">
+       <form method="post" action="${B}/login">
          <input type="hidden" name="next" value="${esc(safeNext(next))}">
          <label>Username</label>
          <input name="username" autocomplete="username" autofocus required>

@@ -1,6 +1,7 @@
 // Render/parse symmetry check for the admin's content forms.
 //
-//   node tools/test-admin-form.mjs
+//   npm run test:admin
+//   node admin/test-form.mjs
 //
 // Renders every content block's default into a form, simulates a browser
 // submitting that form with nothing touched, parses the submission back, and
@@ -9,8 +10,8 @@
 // is the one failure mode of a shape-derived form that nothing else would
 // catch — so this is the test that has to exist.
 import { BLOCKS, effective } from '../src/data/content-blocks.mjs';
-import { renderField, parseField } from '../admin/form.mjs';
-import { enumsFor } from '../admin/validate.mjs';
+import { renderField, parseField } from './form.mjs';
+import { enumsFor } from './validate.mjs';
 
 /* ------------------------------------------------- a browser, approximately */
 

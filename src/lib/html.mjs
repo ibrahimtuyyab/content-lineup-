@@ -1,6 +1,18 @@
 // Rendering primitives: escaping, layout shell, SEO head, JSON-LD, chrome, components.
 import { site, nav, footerNav, cta, analytics } from '../data/site.mjs';
+import { adminLink, LOGIN_PATH } from './admin-link.mjs';
 import { assets } from './assets.mjs';
+
+/**
+ * Where the header Log in button goes.
+ *
+ * The product app on the published site, which is what that button is for: a
+ * visitor clicking Log in wants their ContentLineup account, not a sign-in form
+ * for this site's own editor. On a build made with --admin-link there is an
+ * editor mounted at /admin on this same origin, so Log in goes to /login — one
+ * page offering both doors.
+ */
+const loginHref = adminLink ? LOGIN_PATH : cta.login.href;
 
 // --- escaping ---------------------------------------------------------------
 export const esc = (s = '') =>
@@ -326,7 +338,7 @@ const header = (path) => `
       </ul>
     </nav>
     <div class="head-cta">
-      <a class="btn btn-ghost head-login" href="${cta.login.href}" data-cta="header-login">${esc(cta.login.label)}</a>
+      <a class="btn btn-ghost head-login" href="${loginHref}" data-cta="header-login">${esc(cta.login.label)}</a>
       <a class="btn btn-primary head-start" href="${cta.primary.href}" data-cta="header">${esc(
         cta.primary.label
       )} ${icon('arrow')}</a>
@@ -346,7 +358,7 @@ const header = (path) => `
       </ul>
     </nav>
     <div class="nav-mobile-cta">
-      <a class="btn btn-ghost btn-block" href="${cta.login.href}" data-cta="mobile-nav-login">${esc(cta.login.label)}</a>
+      <a class="btn btn-ghost btn-block" href="${loginHref}" data-cta="mobile-nav-login">${esc(cta.login.label)}</a>
       <a class="btn btn-primary btn-block" href="${cta.primary.href}" data-cta="mobile-nav">${esc(
         cta.primary.label
       )} ${icon('arrow')}</a>
@@ -424,7 +436,11 @@ export function page(o) {
 <title>${esc(o.title)}</title>
 <meta name="description" content="${esc(o.description)}">
 <link rel="canonical" href="${url}">
-<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+${
+  o.noindex
+    ? '<meta name="robots" content="noindex, nofollow">'
+    : '<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">'
+}
 <meta name="theme-color" content="#fafaf7">
 <meta name="color-scheme" content="light">
 <meta name="author" content="${esc(site.name)}">

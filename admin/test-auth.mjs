@@ -1,11 +1,12 @@
 // The admin login, checked without a server.
 //
-//   node tools/test-admin-auth.mjs
+//   npm run test:admin:auth
+//   node admin/test-auth.mjs
 //
 // Hashing, session cookies and the redirect target — the parts where being
 // wrong is quiet. A session check that accepts a forged cookie does not throw,
 // does not log, and does not look any different from one that works.
-import { hashPassword, verifyPassword, createAuth, safeNext } from '../admin/auth.mjs';
+import { hashPassword, verifyPassword, createAuth, safeNext } from './auth.mjs';
 
 let failed = 0;
 const check = (name, cond, why = '') => {
@@ -80,6 +81,53 @@ check(
   "another instance's session is refused",
   !auth.isLoggedIn(asReq(`cl_admin=${encodeURIComponent(foreign)}`)),
   'the signature is not checked against the secret'
+);
+
+/* ------------------------------------------------- sessions and the mount */
+
+// A cookie is scoped to a host and a path, never to a port. The editor running
+// on its own at localhost:8081 and mounted at localhost:8080/admin therefore
+// share one cookie namespace, and a session minted by either used to verify
+// against the other — so signing in once let the second one wave you straight
+// past its login. The mount is part of the signature to stop that.
+{
+  const asOther = (base) => {
+    const before = process.env.ADMIN_BASE;
+    process.env.ADMIN_BASE = base;
+    // paths.mjs reads the environment once at import, so a second instance has
+    // to come from a fresh module registry — a query string is enough.
+    return import(`./paths.mjs?mount=${encodeURIComponent(base)}`).finally(() => {
+      if (before === undefined) delete process.env.ADMIN_BASE;
+      else process.env.ADMIN_BASE = before;
+    });
+  };
+
+  const mounted = await asOther('/admin');
+  check('a second module instance sees its own mount', mounted.BASE === '/admin', `got ${mounted.BASE}`);
+}
+
+const mountBound = decodeURIComponent(/cl_admin=([^;]*)/.exec(auth.login('teczon', 'Sw0rdfish!').cookie)[1]);
+check(
+  'a session carries the mount in its signature',
+  auth.isLoggedIn(asReq(`cl_admin=${encodeURIComponent(mountBound)}`)),
+  'a session from this mount was refused'
+);
+
+// Two cookies of the same name, from the two mounts, arriving together.
+check(
+  'a valid session is found even behind another cookie of the same name',
+  auth.isLoggedIn(asReq(`cl_admin=teczon.${Date.now() + 60000}.deadbeef; cl_admin=${encodeURIComponent(mountBound)}`)),
+  'only the first cl_admin was read'
+);
+check(
+  'and in front of one',
+  auth.isLoggedIn(asReq(`cl_admin=${encodeURIComponent(mountBound)}; cl_admin=teczon.${Date.now() + 60000}.deadbeef`)),
+  'only the last cl_admin was read'
+);
+check(
+  'two bad cookies are still two bad cookies',
+  !auth.isLoggedIn(asReq('cl_admin=nope.1.2; cl_admin=also.3.4')),
+  'a bad cookie was accepted'
 );
 
 check('the wrong password is refused', !auth.login('teczon', 'nope').ok);

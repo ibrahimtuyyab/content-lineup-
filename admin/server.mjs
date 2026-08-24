@@ -1,6 +1,12 @@
 // Local admin UI for the content database.
 //
-//   node admin.mjs            → http://127.0.0.1:8081
+//   node admin/server.mjs     → http://127.0.0.1:8081   (on its own)
+//   npm run admin
+//   npm start                 → http://localhost:8080/admin  (mounted on the site)
+//
+// Exports `handler` so serve.mjs can mount it under /admin and serve the
+// marketing site and the editor from one port. Mounted, ADMIN_BASE carries the
+// prefix — see paths.mjs, which is the only place that knows about it.
 //
 // Bound to loopback, and behind a login: see admin/auth.mjs. Loopback is what
 // keeps the network out; the login is what keeps a browser tab left open on a
@@ -12,7 +18,8 @@
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, extname, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   driver,
   target,
@@ -42,30 +49,65 @@ import {
   categoryBySlug,
   authorUsage,
   categoryUsage,
-} from './db/store.mjs';
-import { renderBody } from './db/render.mjs';
-import { screens } from './src/data/site.mjs';
-import { BLOCKS, blockDef, effective } from './src/data/content-blocks.mjs';
-import { parseField, applyAction } from './admin/form.mjs';
-import { validateBlock } from './admin/validate.mjs';
+} from '../db/store.mjs';
+import { renderBody } from '../db/render.mjs';
+import { screens, site } from '../src/data/site.mjs';
+import { BLOCKS, blockDef, effective } from '../src/data/content-blocks.mjs';
+import { parseField, applyAction } from './form.mjs';
+import { validateBlock } from './validate.mjs';
 import {
   contentIndexView,
   blockEditView,
   referenceView,
   authorEditView,
   categoryEditView,
-} from './admin/content-views.mjs';
-import { createAuth, loginView, safeNext } from './admin/auth.mjs';
+} from './content-views.mjs';
+import { createAuth, loginView, safeNext, lockedFor } from './auth.mjs';
+import { BASE as B, u, strip } from './paths.mjs';
+import { LOGIN_PATH } from '../src/lib/admin-link.mjs';
 
-const ROOT = resolve(import.meta.dirname);
+// The repo root, one level up now that this lives in admin/. It is what the
+// font handler resolves against and the working directory the build runs in.
+const ROOT = resolve(import.meta.dirname, '..');
 const PORT = Number(process.env.ADMIN_PORT) || 8081;
+
+/** True when this file was started directly, rather than imported to be mounted. */
+const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 try {
   await ready();
 } catch (err) {
-  console.error(`Cannot reach the content store (${driver} → ${target}).\n${err.message}`);
-  process.exit(1);
+  const msg = `Cannot reach the content store (${driver} → ${target}).\n${err.message}`;
+  // Run directly, an unreachable store means there is nothing to do: say so
+  // and stop. Mounted inside the site server it is not fatal — the marketing
+  // pages are static files that never touch the database — so throw, and let
+  // the caller keep serving them with /admin reporting the problem.
+  if (isMain) {
+    console.error(msg);
+    process.exit(1);
+  }
+  throw new Error(msg);
 }
+
+/**
+ * Content type for a file served from public/.
+ *
+ * A fixed font/woff2 was fine while fonts were the only thing here, but it is
+ * the kind of shortcut that turns into a mystery the first time someone points
+ * the admin at a logo and the browser refuses to draw it.
+ */
+const ASSET_TYPES = {
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.css': 'text/css; charset=utf-8',
+};
+const assetType = (file) => ASSET_TYPES[extname(file).toLowerCase()] || 'application/octet-stream';
 
 const auth = createAuth();
 
@@ -81,8 +123,8 @@ const CSS = `
 --amber:#b45309;--amber-soft:#fdf3e3;--cream:#efeae1;
 --sans:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;--serif:'Fraunces',Georgia,serif;
 --mono:ui-monospace,Consolas,Menlo,monospace}
-@font-face{font-family:'Inter';src:url('/_asset/fonts/inter-latin.woff2') format('woff2');font-weight:100 900;font-display:swap}
-@font-face{font-family:'Fraunces';src:url('/_asset/fonts/fraunces-latin.woff2') format('woff2');font-weight:100 900;font-display:swap}
+@font-face{font-family:'Inter';src:url('${B}/_asset/fonts/inter-latin.woff2') format('woff2');font-weight:100 900;font-display:swap}
+@font-face{font-family:'Fraunces';src:url('${B}/_asset/fonts/fraunces-latin.woff2') format('woff2');font-weight:100 900;font-display:swap}
 *{box-sizing:border-box}
 body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.6 var(--sans)}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
@@ -220,13 +262,13 @@ const layout = (title, body, flash = '', bare = false) => `<!doctype html>
     bare
       ? ''
       : `<div class="right">
-    <a class="btn ghost sm" href="/">Posts</a>
-    <a class="btn ghost sm" href="/plans">Pricing</a>
-    <a class="btn ghost sm" href="/content">Site content</a>
-    <a class="btn ghost sm" href="/reference">Authors</a>
-    <a class="btn sm" href="/new">New post</a>
-    <form method="post" action="/build" style="display:inline"><button class="btn ghost sm">Rebuild site</button></form>
-    ${auth.enabled ? '<form method="post" action="/logout" style="display:inline"><button class="btn ghost sm" title="Sign out">Sign out</button></form>' : ''}
+    <a class="btn ghost sm" href="${B}/">Posts</a>
+    <a class="btn ghost sm" href="${B}/plans">Pricing</a>
+    <a class="btn ghost sm" href="${B}/content">Site content</a>
+    <a class="btn ghost sm" href="${B}/reference">Authors</a>
+    <a class="btn sm" href="${B}/new">New post</a>
+    <form method="post" action="${B}/build" style="display:inline"><button class="btn ghost sm">Rebuild site</button></form>
+    ${auth.enabled ? `<form method="post" action="${B}/logout" style="display:inline"><button class="btn ghost sm" title="Sign out">Sign out</button></form>` : ''}
   </div>`
   }
 </div></header>
@@ -239,7 +281,7 @@ function indexView({ posts, s }, flash) {
     .map(
       (p) => `<tr>
     <td>
-      <a href="/edit/${esc(p.slug)}"><strong>${esc(p.title)}</strong></a>
+      <a href="${B}/edit/${esc(p.slug)}"><strong>${esc(p.title)}</strong></a>
       ${p.featured ? '<span class="star" title="Featured on the homepage">★</span>' : ''}
       <div class="mono">${esc(p.path)}</div>
     </td>
@@ -248,11 +290,11 @@ function indexView({ posts, s }, flash) {
     <td class="mono">${esc(p.published || '—')}</td>
     <td class="mono">${p.readMins} min</td>
     <td class="mono actions">
-      <a class="btn ghost sm" href="/edit/${esc(p.slug)}">Edit</a>
+      <a class="btn ghost sm" href="${B}/edit/${esc(p.slug)}">Edit</a>
       ${
         p.status === 'published'
           ? `<a class="btn ghost sm" href="http://localhost:8080${esc(p.path)}" target="_blank" rel="noopener">View</a>`
-          : `<form method="post" action="/status"><input type="hidden" name="slug" value="${esc(
+          : `<form method="post" action="${B}/status"><input type="hidden" name="slug" value="${esc(
               p.slug
             )}"><input type="hidden" name="status" value="published"><button class="btn sm">Publish</button></form>`
       }
@@ -318,7 +360,7 @@ function editView({ post, cats, authors }, flash) {
     `<h1>${isNew ? 'New post' : 'Edit post'}</h1>
     <p class="sub">${isNew ? 'Saved as a draft until you publish it.' : esc(p.path)}</p>
 
-    <form method="post" action="/save" class="grid">
+    <form method="post" action="${B}/save" class="grid">
       <input type="hidden" name="original_slug" value="${esc(p.slug)}">
 
       <div class="full">
@@ -452,12 +494,12 @@ Cell 1   | Cell 2
 
       <div class="full actions" style="margin-top:8px">
         <button class="btn" type="submit">Save</button>
-        <a class="btn ghost" href="/">Cancel</a>
+        <a class="btn ghost" href="${B}/">Cancel</a>
         ${
           isNew
             ? ''
             : `<span style="flex:1"></span>
-        <button class="btn danger" type="submit" formaction="/delete" formnovalidate
+        <button class="btn danger" type="submit" formaction="${B}/delete" formnovalidate
           onclick="return confirm('Delete this post and its revisions? This cannot be undone.')">Delete post</button>`
         }
       </div>
@@ -483,7 +525,7 @@ function plansView(plans, flash) {
     .map(
       (p) => `<tr>
     <td>
-      <a href="/plans/edit/${esc(p.id)}"><strong>${esc(p.name)}</strong></a>
+      <a href="${B}/plans/edit/${esc(p.id)}"><strong>${esc(p.name)}</strong></a>
       ${p.featured ? '<span class="star" title="Highlighted as most popular">★</span>' : ''}
       <div class="mono">${esc(p.id)}</div>
     </td>
@@ -492,11 +534,11 @@ function plansView(plans, flash) {
     <td>${esc(p.kicker)}</td>
     <td class="mono">${p.includes.length} bullet${p.includes.length === 1 ? '' : 's'}</td>
     <td class="actions">
-      <a class="btn ghost sm" href="/plans/edit/${esc(p.id)}">Edit</a>
+      <a class="btn ghost sm" href="${B}/plans/edit/${esc(p.id)}">Edit</a>
       ${
         p.featured
           ? ''
-          : `<form method="post" action="/plans/feature"><input type="hidden" name="slug" value="${esc(
+          : `<form method="post" action="${B}/plans/feature"><input type="hidden" name="slug" value="${esc(
               p.id
             )}"><button class="btn ghost sm">Make featured</button></form>`
       }
@@ -551,7 +593,7 @@ function planEditView(plan, flash) {
       ? 'A plan needs a slug that will not change — it is what the database and the CTA tracking key off.'
       : 'Slug <span class="mono">' + esc(p.id) + '</span>'
   }</p>
-  <form class="grid" method="post" action="/plans/save">
+  <form class="grid" method="post" action="${B}/plans/save">
     <input type="hidden" name="original" value="${esc(p.id)}">
 
     <div>
@@ -649,11 +691,11 @@ function planEditView(plan, flash) {
 
     <div class="full actions">
       <button class="btn">Save plan</button>
-      <a class="btn ghost" href="/plans">Cancel</a>
+      <a class="btn ghost" href="${B}/plans">Cancel</a>
       ${
         isNew
           ? ''
-          : `<form method="post" action="/plans/delete" onsubmit="return confirm('Delete ${esc(
+          : `<form method="post" action="${B}/plans/delete" onsubmit="return confirm('Delete ${esc(
               p.name
             )}? This cannot be undone.')" style="margin-left:auto"><input type="hidden" name="slug" value="${esc(
               p.id
@@ -688,11 +730,17 @@ const slugify = (s) =>
 
 const send = (res, status, html) => {
   res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  // A HEAD gets the headers and the status and no body, by definition. The
+  // request is reachable from the response in Node, so every call site below
+  // stays a plain send() and none of them has to think about it.
+  if (res.req?.method === 'HEAD') return res.end();
   res.end(html);
 };
 
 const redirect = (res, to) => {
-  res.writeHead(303, { Location: to });
+  // Callers pass a path as the admin's own routes name it; the mount prefix is
+  // added here so no caller has to remember it.
+  res.writeHead(303, { Location: u(to) });
   res.end();
 };
 
@@ -734,48 +782,107 @@ const loadBlock = async (key, json) => {
 };
 
 /* ------------------------------------------------------------------- server */
-const server = createServer(async (req, res) => {
+/**
+ * One request. Exported so it can be mounted inside another server; the
+ * routes below are matched on the path with any mount prefix removed, so
+ * nothing here cares which of the two it is running in.
+ */
+export const handler = async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
-  const path = url.pathname;
+  // Routes are matched on the path as the admin names it, with any mount
+  // prefix removed — so mounting it under /admin changes no route below.
+  const path = strip(url.pathname);
+
+  // HEAD asks for exactly what GET would return, minus the body, so it is
+  // matched as GET and send() drops the body. Left as its own method, HEAD
+  // matched no route at all, fell through to the sign-in redirect, and then
+  // did the same on the login page it was sent to — a redirect loop that any
+  // link checker or uptime probe hits on its first request.
+  const method = req.method === 'HEAD' ? 'GET' : req.method;
 
   try {
     // Fonts, so the admin matches the brand without a network request. Left
     // outside the guard so the login page is not typeset in a fallback font.
     if (path.startsWith('/_asset/')) {
-      const file = join(ROOT, 'public', path.replace('/_asset/', ''));
-      if (!resolve(file).startsWith(join(ROOT, 'public'))) return send(res, 403, 'no');
-      res.writeHead(200, { 'Content-Type': 'font/woff2', 'Cache-Control': 'max-age=86400' });
-      return res.end(readFileSync(file));
+      const dir = join(ROOT, 'public');
+      const file = join(dir, path.replace('/_asset/', ''));
+      // resolve() collapses any ..; anything that climbs out of public/ is not
+      // ours to serve. join(dir, '') would equal dir, so compare against dir +
+      // separator rather than dir, or '/publicfoo' would pass this check.
+      if (!resolve(file).startsWith(dir + sep)) return send(res, 403, 'Not allowed');
+
+      // Read before writing the header, not after. The other order sends a 200
+      // and then throws on a missing file, and the error handler below cannot
+      // send anything once the header has gone — which took the whole process
+      // down with it, on an unauthenticated request for any name that happened
+      // not to exist.
+      let body;
+      try {
+        body = readFileSync(file);
+      } catch {
+        return send(res, 404, 'Not found');
+      }
+      res.writeHead(200, { 'Content-Type': assetType(file), 'Cache-Control': 'max-age=86400' });
+      return res.end(req.method === 'HEAD' ? undefined : body);
     }
 
     /* ----------------------------------------------------------------- login */
-    if (req.method === 'GET' && path === '/login') {
+    if (method === 'GET' && path === '/login') {
       if (!auth.enabled || auth.isLoggedIn(req)) return redirect(res, '/');
       return send(res, 200, loginView(layout, { next: url.searchParams.get('next') || '/' }));
     }
 
-    if (req.method === 'POST' && path === '/login') {
+    if (method === 'POST' && path === '/login') {
       const f = await readBody(req);
-      const result = auth.login(f.get('username'), f.get('password'));
+      const username = f.get('username');
+
+      // Submitted from the site's own /login, which is one form for two
+      // different sign-ins. A username that is not the admin's belongs to a
+      // ContentLineup customer, so send them to the product's sign-in page —
+      // and note what does NOT happen to the password they typed: the app is a
+      // separate service this site cannot authenticate against, so it is
+      // dropped here, unread. Never stored, never logged, never forwarded.
+      // Only when mounted: /login is a page of the site, so it exists exactly
+      // when the site is serving this admin. Standalone there is nothing to
+      // send anyone back to, and this stays the plain admin login it was.
+      const fromSite = f.get('from') === 'site' && !!B;
+      if (fromSite && auth.enabled && !auth.isUser(username)) {
+        res.writeHead(303, { Location: site.app.login });
+        return res.end();
+      }
+
+      const result = auth.login(username, f.get('password'));
       if (!result.ok) {
+        // Back to whichever form was used, so a typo is corrected where it was
+        // made. The site's page reads the reason off the fragment (CSS :target,
+        // no JavaScript); the admin's own form renders it directly.
+        if (fromSite) {
+          res.writeHead(303, { Location: `${LOGIN_PATH}#${lockedFor() ? 'locked' : 'error'}` });
+          return res.end();
+        }
         // 401, not 200: a failed sign-in is a failed sign-in, and saying so in
         // the status keeps anything scripted against this honest.
         return send(res, 401, loginView(layout, { error: result.error, next: f.get('next') }));
       }
       // Only ever redirect to a path on this admin. An open redirect here would
       // turn the login into a way of laundering a link to somewhere else.
-      res.writeHead(303, { Location: safeNext(f.get('next')), 'Set-Cookie': result.cookie });
+      res.writeHead(303, { Location: u(safeNext(f.get('next'))), 'Set-Cookie': result.cookie });
       return res.end();
     }
 
-    if (req.method === 'POST' && path === '/logout') {
-      res.writeHead(303, { Location: '/login', 'Set-Cookie': auth.logoutCookie() });
+    if (method === 'POST' && path === '/logout') {
+      res.writeHead(303, { Location: u('/login'), 'Set-Cookie': auth.logoutCookie() });
       return res.end();
     }
 
     // Everything past this point needs a session.
     if (auth.enabled && !auth.isLoggedIn(req)) {
-      if (req.method !== 'GET') {
+      // GET and HEAD are the two methods that only ask for a page, so both get
+      // sent to the login. HEAD used to fall through to the 401 below, which
+      // meant every link checker and uptime probe reported the admin as broken
+      // rather than as protected.
+      const reading = method === 'GET' || method === 'HEAD';
+      if (!reading) {
         // A POST from a stale tab: send it to the login rather than silently
         // dropping it, so it is obvious the session expired.
         return send(res, 401, loginView(layout, { error: 'Your session expired. Sign in again.', next: '/' }));
@@ -784,7 +891,7 @@ const server = createServer(async (req, res) => {
     }
 
     /* ------------------------------------------------------------- pricing */
-    if (req.method === 'GET' && path === '/plans') {
+    if (method === 'GET' && path === '/plans') {
       const f = url.searchParams.get('ok')
         ? flashOk(url.searchParams.get('ok'))
         : url.searchParams.get('err')
@@ -793,19 +900,19 @@ const server = createServer(async (req, res) => {
       return send(res, 200, plansView(await allPlans(), f));
     }
 
-    if (req.method === 'GET' && path === '/plans/new') {
+    if (method === 'GET' && path === '/plans/new') {
       return send(res, 200, planEditView(null, ''));
     }
 
-    if (req.method === 'GET' && path.startsWith('/plans/edit/')) {
+    if (method === 'GET' && path.startsWith('/plans/edit/')) {
       const plan = await planBySlug(decodeURIComponent(path.slice(12)));
       if (!plan)
-        return send(res, 404, layout('Not found', '<h1>No such plan</h1><p><a href="/plans">Back</a></p>'));
+        return send(res, 404, layout('Not found', `<h1>No such plan</h1><p><a href="${B}/plans">Back</a></p>`));
       const f = url.searchParams.get('ok') ? flashOk(url.searchParams.get('ok')) : '';
       return send(res, 200, planEditView(plan, f));
     }
 
-    if (req.method === 'POST' && path === '/plans/save') {
+    if (method === 'POST' && path === '/plans/save') {
       const f = await readBody(req);
       const slug = slugify(f.get('slug') || '');
       if (!slug) throw new Error('A plan needs a slug.');
@@ -850,20 +957,20 @@ const server = createServer(async (req, res) => {
       return redirect(res, `/plans/edit/${encodeURIComponent(slug)}?ok=${encodeURIComponent('Saved. Rebuild to publish it.')}`);
     }
 
-    if (req.method === 'POST' && path === '/plans/feature') {
+    if (method === 'POST' && path === '/plans/feature') {
       const f = await readBody(req);
       await setPlanFeatured((f.get('slug') || '').trim());
       return redirect(res, `/plans?ok=${encodeURIComponent('Highlight moved. Rebuild to publish it.')}`);
     }
 
-    if (req.method === 'POST' && path === '/plans/delete') {
+    if (method === 'POST' && path === '/plans/delete') {
       const f = await readBody(req);
       await deletePlan((f.get('slug') || '').trim());
       return redirect(res, `/plans?ok=${encodeURIComponent('Plan deleted.')}`);
     }
 
     /* -------------------------------------------------------- site content */
-    if (req.method === 'GET' && path === '/content') {
+    if (method === 'GET' && path === '/content') {
       const { overrides, live } = await loadContent();
       const known = new Set(BLOCKS.map((b) => b.key));
       const f = url.searchParams.get('ok')
@@ -890,7 +997,7 @@ const server = createServer(async (req, res) => {
       );
     }
 
-    if (req.method === 'GET' && path.startsWith('/content/')) {
+    if (method === 'GET' && path.startsWith('/content/')) {
       const key = decodeURIComponent(path.slice('/content/'.length));
       const ctx = await loadBlock(key, url.searchParams.get('json') === '1');
       if (!ctx) {
@@ -900,7 +1007,7 @@ const server = createServer(async (req, res) => {
           layout(
             'Not found',
             `<h1>No content block called "${esc(key)}"</h1>
-             <p><a href="/content">Back to site content</a></p>`
+             <p><a href="${B}/content">Back to site content</a></p>`
           )
         );
       }
@@ -912,7 +1019,7 @@ const server = createServer(async (req, res) => {
       return send(res, 200, blockEditView(layout, ctx, f));
     }
 
-    if (req.method === 'POST' && path === '/content/save') {
+    if (method === 'POST' && path === '/content/save') {
       const f = await readBody(req);
       const key = f.get('key');
       const def = blockDef(key);
@@ -987,7 +1094,7 @@ const server = createServer(async (req, res) => {
       return redirect(res, `/content/${encodeURIComponent(key)}?${q}`);
     }
 
-    if (req.method === 'POST' && path === '/content/reset') {
+    if (method === 'POST' && path === '/content/reset') {
       const f = await readBody(req);
       const key = f.get('key');
       const existed = await deleteBlock(key);
@@ -1002,7 +1109,7 @@ const server = createServer(async (req, res) => {
     }
 
     /* ----------------------------------------------------- reference data */
-    if (req.method === 'GET' && path === '/reference') {
+    if (method === 'GET' && path === '/reference') {
       const f = url.searchParams.get('ok')
         ? flashOk(url.searchParams.get('ok'))
         : url.searchParams.get('err')
@@ -1017,19 +1124,19 @@ const server = createServer(async (req, res) => {
       return send(res, 200, referenceView(layout, { authors, cats, authorUse, catUse }, f));
     }
 
-    if (req.method === 'GET' && path === '/authors/new') {
+    if (method === 'GET' && path === '/authors/new') {
       return send(res, 200, authorEditView(layout, null, ''));
     }
 
-    if (req.method === 'GET' && path.startsWith('/authors/')) {
+    if (method === 'GET' && path.startsWith('/authors/')) {
       const author = await authorBySlug(decodeURIComponent(path.slice('/authors/'.length)));
       if (!author) {
-        return send(res, 404, layout('Not found', '<h1>No such author</h1><p><a href="/reference">Back</a></p>'));
+        return send(res, 404, layout('Not found', `<h1>No such author</h1><p><a href="${B}/reference">Back</a></p>`));
       }
       return send(res, 200, authorEditView(layout, author, ''));
     }
 
-    if (req.method === 'POST' && path === '/authors/save') {
+    if (method === 'POST' && path === '/authors/save') {
       const f = await readBody(req);
       const name = (f.get('name') || '').trim();
       if (!name) throw new Error('An author needs a name.');
@@ -1056,26 +1163,26 @@ const server = createServer(async (req, res) => {
       return redirect(res, `/reference?ok=${encodeURIComponent(`Saved ${name}.`)}`);
     }
 
-    if (req.method === 'POST' && path === '/authors/delete') {
+    if (method === 'POST' && path === '/authors/delete') {
       const f = await readBody(req);
       const slug = (f.get('slug') || '').trim();
       await deleteAuthor(slug);
       return redirect(res, `/reference?ok=${encodeURIComponent(`Deleted ${slug}.`)}`);
     }
 
-    if (req.method === 'GET' && path === '/categories/new') {
+    if (method === 'GET' && path === '/categories/new') {
       return send(res, 200, categoryEditView(layout, null, ''));
     }
 
-    if (req.method === 'GET' && path.startsWith('/categories/')) {
+    if (method === 'GET' && path.startsWith('/categories/')) {
       const cat = await categoryBySlug(decodeURIComponent(path.slice('/categories/'.length)));
       if (!cat) {
-        return send(res, 404, layout('Not found', '<h1>No such category</h1><p><a href="/reference">Back</a></p>'));
+        return send(res, 404, layout('Not found', `<h1>No such category</h1><p><a href="${B}/reference">Back</a></p>`));
       }
       return send(res, 200, categoryEditView(layout, cat, ''));
     }
 
-    if (req.method === 'POST' && path === '/categories/save') {
+    if (method === 'POST' && path === '/categories/save') {
       const f = await readBody(req);
       const label = (f.get('label') || '').trim();
       const singular = (f.get('singular') || '').trim();
@@ -1101,14 +1208,14 @@ const server = createServer(async (req, res) => {
       return redirect(res, `/reference?ok=${encodeURIComponent(`Saved ${label}.`)}`);
     }
 
-    if (req.method === 'POST' && path === '/categories/delete') {
+    if (method === 'POST' && path === '/categories/delete') {
       const f = await readBody(req);
       const slug = (f.get('slug') || '').trim();
       await deleteCategory(slug);
       return redirect(res, `/reference?ok=${encodeURIComponent(`Deleted ${slug}.`)}`);
     }
 
-    if (req.method === 'GET' && path === '/') {
+    if (method === 'GET' && path === '/') {
       const f = url.searchParams.get('ok')
         ? flashOk(url.searchParams.get('ok'))
         : url.searchParams.get('err')
@@ -1122,18 +1229,18 @@ const server = createServer(async (req, res) => {
       return send(res, 200, indexView(await loadIndex(), f));
     }
 
-    if (req.method === 'GET' && path === '/new') {
+    if (method === 'GET' && path === '/new') {
       return send(res, 200, editView(await loadEdit(null), ''));
     }
 
-    if (req.method === 'GET' && path.startsWith('/edit/')) {
+    if (method === 'GET' && path.startsWith('/edit/')) {
       const post = await postBySlug(decodeURIComponent(path.slice(6)));
-      if (!post) return send(res, 404, layout('Not found', '<h1>No such post</h1><p><a href="/">Back</a></p>'));
+      if (!post) return send(res, 404, layout('Not found', `<h1>No such post</h1><p><a href="${B}/">Back</a></p>`));
       const f = url.searchParams.get('ok') ? flashOk(url.searchParams.get('ok')) : '';
       return send(res, 200, editView(await loadEdit(post), f));
     }
 
-    if (req.method === 'POST' && path === '/save') {
+    if (method === 'POST' && path === '/save') {
       const f = await readBody(req);
       const title = (f.get('title') || '').trim();
       const slug = slugify(f.get('slug') || title);
@@ -1181,22 +1288,26 @@ const server = createServer(async (req, res) => {
       return redirect(res, `/edit/${slug}?ok=${encodeURIComponent('Saved. Rebuild the site to publish the change.')}`);
     }
 
-    if (req.method === 'POST' && path === '/status') {
+    if (method === 'POST' && path === '/status') {
       const f = await readBody(req);
       await setStatus(f.get('slug'), f.get('status'), new Date().toISOString().slice(0, 10));
       return redirect(res, `/?ok=${encodeURIComponent('Status updated. Rebuild the site to apply it.')}`);
     }
 
-    if (req.method === 'POST' && path === '/delete') {
+    if (method === 'POST' && path === '/delete') {
       const f = await readBody(req);
       const slug = f.get('original_slug');
       await deletePost(slug);
       return redirect(res, `/?ok=${encodeURIComponent(`Deleted ${slug}.`)}`);
     }
 
-    if (req.method === 'POST' && path === '/build') {
+    if (method === 'POST' && path === '/build') {
       const out = await new Promise((done) => {
-        const child = spawn(process.execPath, ['build.mjs'], { cwd: ROOT });
+        // Mounted inside the site server, the site being rebuilt is one that
+        // is served with the admin attached — so it keeps the footer link to
+        // it. Without this, pressing Rebuild removed the only way back here.
+        const args = ['build.mjs', ...(B ? ['--admin-link'] : [])];
+        const child = spawn(process.execPath, args, { cwd: ROOT });
         let buf = '';
         child.stdout.on('data', (d) => (buf += d));
         child.stderr.on('data', (d) => (buf += d));
@@ -1206,34 +1317,49 @@ const server = createServer(async (req, res) => {
       return redirect(res, '/');
     }
 
-    send(res, 404, layout('Not found', '<h1>Not found</h1><p><a href="/">Back to posts</a></p>'));
+    send(res, 404, layout('Not found', `<h1>Not found</h1><p><a href="${B}/">Back to posts</a></p>`));
   } catch (err) {
+    // A handler that already started the response cannot be given a new one:
+    // writeHead would throw again, and this is the last catch there is, so that
+    // second throw would end the process rather than the request.
+    if (res.headersSent) {
+      console.error(`${req.method} ${path} failed after the response started: ${err.message}`);
+      return res.end();
+    }
     try {
       send(res, 400, indexView(await loadIndex(), flashErr(err.message)));
     } catch {
       send(res, 500, layout('Error', `<h1>Error</h1><p>${esc(err.message)}</p>`));
     }
   }
-});
+};
+
+/** The banner, shared by both ways of starting it. */
+export const describeAuth = () =>
+  auth.enabled
+    ? `Login:                ${auth.user}` +
+      (auth.ephemeralSecret
+        ? '\n\nADMIN_SESSION_SECRET is not set, so restarting signs you out.\n' +
+          'Set one with: npm run admin:password'
+        : '')
+    : `Login:                off (${auth.reason})\n` +
+      '                      Turn it on with: npm run admin:password';
+
+export const describeStore = () => `${driver} → ${target}`;
 
 // Loopback only. The login guards the machine; the binding guards the network,
 // and it has to stay that way — this speaks plain http.
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`\nContentLineup admin:  http://127.0.0.1:${PORT}`);
-  console.log(`Store:                ${driver} → ${target}`);
-  console.log(
-    auth.enabled
-      ? `Login:                ${auth.user}` +
-          (auth.ephemeralSecret
-            ? '\n\nADMIN_SESSION_SECRET is not set, so restarting signs you out.\n' +
-              'Set one with: npm run admin:password'
-            : '')
-      : `Login:                off (${auth.reason})\n` +
-          '                      Turn it on with: npm run admin:password'
-  );
-  console.log(`\nLoopback only — do not expose this port.\n`);
-});
+const server = isMain && createServer(handler);
+if (isMain)
+  server.listen(PORT, '127.0.0.1', () => {
+    console.log(`\nContentLineup admin:  http://127.0.0.1:${PORT}`);
+    console.log(`Store:                ${describeStore()}`);
+    console.log(describeAuth());
+    console.log(`\nLoopback only — do not expose this port.\n`);
+  });
 
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => server.close(() => process.exit(0)));
+if (isMain) {
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, () => server.close(() => process.exit(0)));
+  }
 }

@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createInterface } from 'node:readline';
-import { hashPassword } from '../admin/auth.mjs';
+import { hashPassword } from './auth.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const ENV = join(ROOT, '.env');

@@ -2717,6 +2717,90 @@ table.cmp .dim small {
   gap: 8px;
 }
 
+/* ---------- sign in ----------
+   Two doors on one page: the product account, and this site's editor. Only
+   built with --admin-link, so these rules are dead weight on the published
+   CSS — about 1 KB before gzip, which is cheaper than a second stylesheet. */
+.login-page {
+  padding-block: clamp(56px, 9vw, 104px) clamp(70px, 12vw, 130px);
+}
+.login-head {
+  text-align: center;
+  max-width: 620px;
+  margin: 0 auto clamp(30px, 5vw, 48px);
+}
+.login-head .eyebrow {
+  justify-content: center;
+}
+.login-head h1 {
+  margin: 10px 0 14px;
+}
+.login-card {
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
+  padding: clamp(24px, 3.4vw, 34px);
+  max-width: 430px;
+  margin: 0 auto;
+}
+.login-card .btn {
+  width: 100%;
+  justify-content: center;
+  margin-top: 22px;
+}
+
+/* Failed sign-in. The server redirects to /login#error or /login#locked, so
+   the message that applies is the one the URL points at — no JavaScript, which
+   matters because every other interaction on this site degrades too. */
+.login-error {
+  display: none;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 20px;
+  padding: 11px 14px;
+  border-radius: var(--r-sm);
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.login-error:target {
+  display: flex;
+}
+.login-error .ico {
+  flex: none;
+  width: 17px;
+  height: 17px;
+}
+.login-alt {
+  font-size: 13.5px;
+  color: var(--subtle);
+  margin: 16px 0 0;
+}
+.login-form label {
+  display: block;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.login-form label + input {
+  margin-bottom: 16px;
+}
+.login-form input {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  font: 15px var(--sans);
+  color: var(--ink);
+}
+.login-form input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: transparent;
+}
 /* ---------- 404 ---------- */
 .nf {
   text-align: center;

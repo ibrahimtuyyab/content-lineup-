@@ -1,14 +1,15 @@
 // The admin's site-content and reference-data pages.
 //
-// Split out of admin.mjs because the form engine, the validators and the block
-// register are all only used here — admin.mjs stays the server, the chrome and
+// Split out of server.mjs because the form engine, the validators and the block
+// register are all only used here — server.mjs stays the server, the chrome and
 // the post and plan editors it always was.
 //
-// Every view takes the layout function from admin.mjs rather than importing it,
+// Every view takes the layout function from server.mjs rather than importing it,
 // so there is exactly one definition of the page chrome and no import cycle.
 import { BLOCKS, GROUPS } from '../src/data/content-blocks.mjs';
 import { renderField, summarize, humanize } from './form.mjs';
 import { enumsFor, SCREEN_IDS } from './validate.mjs';
+import { BASE as B } from './paths.mjs';
 
 const esc = (s = '') =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -30,17 +31,17 @@ export function contentIndexView(layout, { live, edited, orphans, counts }, flas
         const isEdited = edited.has(b.key);
         return `<tr>
         <td>
-          <a href="/content/${esc(b.key)}"><strong>${esc(b.label)}</strong></a>
+          <a href="${B}/content/${esc(b.key)}"><strong>${esc(b.label)}</strong></a>
           ${isEdited ? '<span class="pill edited">edited</span>' : ''}
           <div class="mono">${esc(b.key)}</div>
         </td>
         <td class="hint cell">${esc(b.hint)}</td>
         <td class="mono">${esc(summarize(live[b.key]))}</td>
         <td class="mono actions">
-          <a class="btn ghost sm" href="/content/${esc(b.key)}">Edit</a>
+          <a class="btn ghost sm" href="${B}/content/${esc(b.key)}">Edit</a>
           ${
             isEdited
-              ? `<form method="post" action="/content/reset" onsubmit="return confirm('Discard the edits to ${esc(
+              ? `<form method="post" action="${B}/content/reset" onsubmit="return confirm('Discard the edits to ${esc(
                   b.label
                 )} and go back to what ships in the repository?')">
                    <input type="hidden" name="key" value="${esc(b.key)}">
@@ -67,7 +68,7 @@ export function contentIndexView(layout, { live, edited, orphans, counts }, flas
          saved and has no effect is worse than one that was never made.</p>
          <div class="actions">${orphans
            .map(
-             (k) => `<form method="post" action="/content/reset">
+             (k) => `<form method="post" action="${B}/content/reset">
                <input type="hidden" name="key" value="${esc(k)}">
                <button class="btn danger sm">Delete ${esc(k)}</button></form>`
            )
@@ -128,8 +129,8 @@ export function blockEditView(layout, { def, value, live, isEdited, json, update
            ${isEdited ? `edited${updatedAt ? ' ' + esc(String(updatedAt).slice(0, 10)) : ''}` : 'as shipped'}</p>
        </div>
        <div class="actions">
-         <a class="btn ghost sm" href="/content">All content</a>
-         <a class="btn ghost sm" href="/content/${esc(def.key)}${json ? '' : '?json=1'}">${
+         <a class="btn ghost sm" href="${B}/content">All content</a>
+         <a class="btn ghost sm" href="${B}/content/${esc(def.key)}${json ? '' : '?json=1'}">${
            json ? 'Form view' : 'Edit as JSON'
          }</a>
        </div>
@@ -137,16 +138,16 @@ export function blockEditView(layout, { def, value, live, isEdited, json, update
      <div class="card"><p class="hint" style="margin:0">${esc(def.hint)}</p></div>
      ${mapHint}
      ${screenHelp(def.key)}
-     <form method="post" action="/content/save" class="blockform">
+     <form method="post" action="${B}/content/save" class="blockform">
        <input type="hidden" name="key" value="${esc(def.key)}">
        <input type="hidden" name="mode" value="${json ? 'json' : 'form'}">
        ${body}
        <div class="sticky">
          <button class="btn">Save</button>
-         <a class="btn ghost" href="/content">Cancel</a>
+         <a class="btn ghost" href="${B}/content">Cancel</a>
          ${
            isEdited
-             ? `<button class="btn danger" formaction="/content/reset"
+             ? `<button class="btn danger" formaction="${B}/content/reset"
                   onclick="return confirm('Discard these edits and go back to what ships in the repository?')"
                   >Reset to shipped content</button>`
              : ''
@@ -204,11 +205,11 @@ export function referenceView(layout, { authors, cats, authorUse, catUse }, flas
       <td class="hint cell">${esc(a.bio || '')}</td>
       <td class="mono">${authorUse[a.slug] || 0}</td>
       <td class="mono actions">
-        <a class="btn ghost sm" href="/authors/${esc(a.slug)}">Edit</a>
+        <a class="btn ghost sm" href="${B}/authors/${esc(a.slug)}">Edit</a>
         ${
           authorUse[a.slug]
             ? ''
-            : `<form method="post" action="/authors/delete" onsubmit="return confirm('Delete ${esc(
+            : `<form method="post" action="${B}/authors/delete" onsubmit="return confirm('Delete ${esc(
                 a.name
               )}?')">
                  <input type="hidden" name="slug" value="${esc(a.slug)}">
@@ -226,11 +227,11 @@ export function referenceView(layout, { authors, cats, authorUse, catUse }, flas
       <td class="mono">${c.sort}</td>
       <td class="mono">${catUse[c.slug] || 0}</td>
       <td class="mono actions">
-        <a class="btn ghost sm" href="/categories/${esc(c.slug)}">Edit</a>
+        <a class="btn ghost sm" href="${B}/categories/${esc(c.slug)}">Edit</a>
         ${
           catUse[c.slug]
             ? ''
-            : `<form method="post" action="/categories/delete" onsubmit="return confirm('Delete ${esc(
+            : `<form method="post" action="${B}/categories/delete" onsubmit="return confirm('Delete ${esc(
                 c.label
               )}?')">
                  <input type="hidden" name="slug" value="${esc(c.slug)}">
@@ -246,12 +247,12 @@ export function referenceView(layout, { authors, cats, authorUse, catUse }, flas
      <p class="sub">What posts are filed under and attributed to.</p>
 
      <div class="head"><h2>Authors</h2>
-       <a class="btn sm" href="/authors/new">New author</a></div>
+       <a class="btn sm" href="${B}/authors/new">New author</a></div>
      <table><thead><tr><th>Author</th><th>Email</th><th>Bio</th><th>Posts</th><th></th></tr></thead>
        <tbody>${authorRows || '<tr><td colspan="5">No authors yet.</td></tr>'}</tbody></table>
 
      <div class="head"><h2>Categories</h2>
-       <a class="btn sm" href="/categories/new">New category</a></div>
+       <a class="btn sm" href="${B}/categories/new">New category</a></div>
      <table><thead><tr><th>Category</th><th>Singular</th><th>Sort</th><th>Posts</th><th></th></tr></thead>
        <tbody>${catRows || '<tr><td colspan="5">No categories yet.</td></tr>'}</tbody></table>
      <p class="hint">A category or author still used by a post has no Delete button: posts reference them
@@ -268,7 +269,7 @@ export function authorEditView(layout, author, flash) {
     `<h1>${isNew ? 'New author' : esc(a.name)}</h1>
      <p class="sub">Bylines on the resources articles, and the <code>author</code> in each article's
      structured data.</p>
-     <form method="post" action="/authors/save" class="grid">
+     <form method="post" action="${B}/authors/save" class="grid">
        <input type="hidden" name="original_slug" value="${esc(a.slug)}">
        <div><label>Name</label><input name="name" value="${esc(a.name)}" required></div>
        <div><label>Slug</label><input name="slug" value="${esc(a.slug)}"
@@ -280,7 +281,7 @@ export function authorEditView(layout, author, flash) {
          <div class="hint">One or two sentences. Shown at the foot of each article they wrote.</div></div>
        <div class="full actions">
          <button class="btn">Save author</button>
-         <a class="btn ghost" href="/reference">Cancel</a>
+         <a class="btn ghost" href="${B}/reference">Cancel</a>
        </div>
      </form>`,
     flash
@@ -295,7 +296,7 @@ export function categoryEditView(layout, cat, flash) {
     `<h1>${isNew ? 'New category' : esc(c.label)}</h1>
      <p class="sub">The slug is part of every article URL in the category, so changing it on a category
      that already has posts changes those URLs.</p>
-     <form method="post" action="/categories/save" class="grid">
+     <form method="post" action="${B}/categories/save" class="grid">
        <input type="hidden" name="original_slug" value="${esc(c.slug)}">
        <div><label>Label (plural)</label><input name="label" value="${esc(c.label)}" required
          placeholder="Case studies"></div>
@@ -307,12 +308,12 @@ export function categoryEditView(layout, cat, flash) {
          <div class="hint">Low numbers first, in the resources filter bar.</div></div>
        <div class="full actions">
          <button class="btn">Save category</button>
-         <a class="btn ghost" href="/reference">Cancel</a>
+         <a class="btn ghost" href="${B}/reference">Cancel</a>
        </div>
      </form>`,
     flash
   );
 }
 
-/** Field labels are wanted by admin.mjs for its own forms too. */
+/** Field labels are wanted by server.mjs for its own forms too. */
 export { humanize };

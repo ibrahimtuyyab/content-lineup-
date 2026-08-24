@@ -30,6 +30,8 @@ import {
   termsPage,
   notFoundPage,
 } from './src/pages/company.mjs';
+import { loginPage } from './src/pages/login.mjs';
+import { adminLink } from './src/lib/admin-link.mjs';
 import { resourcesHub, articlePage } from './src/pages/resources.mjs';
 
 const ROOT = resolve(import.meta.dirname);
@@ -53,6 +55,14 @@ const routes = [
   { path: '/contact', render: contactPage, priority: '0.6', changefreq: 'yearly', image: '/og/contact.png' },
   { path: '/privacy', render: privacyPage, priority: '0.3', changefreq: 'yearly', noSitemapDate: true },
   { path: '/terms', render: termsPage, priority: '0.3', changefreq: 'yearly', noSitemapDate: true },
+  // Only on a build made with --admin-link. Half of this page is the door into
+  // the editor, and the editor exists only when serve.mjs is mounting it — on
+  // the published static site there would be nothing behind it. Left out of the
+  // sitemap for the same reason it is noindex: it is a utility page, not
+  // something to rank.
+  ...(adminLink
+    ? [{ path: '/login', render: loginPage, priority: '0.1', changefreq: 'yearly', noSitemap: true }]
+    : []),
   ...posts.map((p) => ({
     path: p.path,
     render: () => articlePage(p),
@@ -104,7 +114,12 @@ const today = new Date().toISOString().slice(0, 10);
 
 /* ------------------------------------------------------------------- build */
 console.log('Building ContentLineup…\n');
-rmSync(DIST, { recursive: true, force: true });
+// Retries because dist/ may be being served while it is rebuilt — which is now
+// the normal case, since `npm start` serves the site and the admin's "Rebuild
+// site" button runs this. Windows refuses to delete a file another process has
+// open, even for a moment, so a plain remove fails intermittently and the build
+// dies with it. Node does the backoff itself; this is not a hand-rolled loop.
+rmSync(DIST, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 mkdirSync(DIST, { recursive: true });
 
 // 1. static assets
@@ -157,6 +172,7 @@ write(
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
 ${routes
+  .filter((r) => !r.noSitemap)
   .map(
     (r) => `  <url>
     <loc>${site.origin}${r.path}</loc>
@@ -180,6 +196,11 @@ write(
   `# ${site.name}
 User-agent: *
 Allow: /
+# The editor and the sign-in page that reaches it. Neither exists on the
+# published site, and neither is content. No blank line above these: a blank
+# line ends the record for a strict parser, and they would apply to nobody.
+Disallow: /admin
+Disallow: /login
 
 # AI answer engines are welcome to read and cite this site.
 User-agent: GPTBot

@@ -80,7 +80,7 @@ function Start-Servers {
     -WorkingDirectory $Root -WindowStyle Hidden | Out-Null
 
   if (-not $NoAdmin) {
-    Start-Process -FilePath $node -ArgumentList 'admin.mjs' `
+    Start-Process -FilePath $node -ArgumentList 'admin/server.mjs' `
       -WorkingDirectory $Root -WindowStyle Hidden | Out-Null
   }
 

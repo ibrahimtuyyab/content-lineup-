@@ -8,10 +8,10 @@ writes a complete `dist/` you can host anywhere.
 ## Quick start
 
 ```bash
-npm run build     # renders dist/
+npm run build     # renders dist/ — no editor, no link to one
 npm run serve     # serves dist/ at http://localhost:8080
-npm start         # build + serve
-npm run admin     # content editor at http://127.0.0.1:8081 (asks you to sign in)
+npm start         # build + serve, with the editor at /admin behind the header Log in
+npm run admin     # the editor on its own at http://127.0.0.1:8081
 npm run audit     # overflow / links / console / load-time check against a running server
 npm run fonts     # re-subset the web fonts (only when assets/fonts-src/ changes)
 ```
@@ -93,7 +93,8 @@ fallback-font flash on a heading.
 
 ```
 build.mjs              SSG entry point — routes, sitemap, robots, RSS
-serve.mjs              Production static server (brotli/gzip, caching, clean URLs)
+serve.mjs              The site server (brotli/gzip, caching, clean URLs);
+                       with --admin it also mounts the editor at /admin
 src/
   styles.css           Design system + all component styles
   app.js               Nav, reveals, lineup board, scroll tour, demos, tabs, counters
@@ -115,7 +116,9 @@ src/
     blocks.mjs         Sections shared by the deeper pages
     article.mjs        Long-form article markup helpers
     screens.mjs        The thirteen app screens, rendered as SVG
+    admin-link.mjs     Whether this build points Log in at the editor
   pages/               One module per route group
+    login.mjs          The sign-in page: one form, admin or product account
 docs/
   seo-content-plan.md  Keyword → page map, topic clusters, and the editorial queue
 public/                Static assets copied verbatim into dist/
@@ -136,12 +139,17 @@ db/
   migrate.mjs          Build the local mirror
   seed.mjs             Seed the local mirror from the launch articles
   seed-content/        Launch articles as modules (import payload only)
-admin.mjs              Local web editor: posts, plans, site content, authors
-admin/
+admin/                 The editor: posts, plans, site content, authors
+  paths.mjs            Where the admin is mounted; the prefix every link carries
+  server.mjs           The HTTP server, the page chrome, the post and plan editors
   auth.mjs             The login: password hashing, session cookie, sign-in page
   form.mjs             Builds a form from a content block's shape, and parses it back
   validate.mjs         Per-block checks that run before any content is written
   content-views.mjs    The site-content and authors/categories pages
+  password.mjs         Sets or rotates the admin login
+  test-form.mjs        Round-trips every content block through its form
+  test-auth.mjs        The login, checked without a server
+  test-routes.mjs      End-to-end check of the admin, against a running server
 .env                   Supabase credentials (gitignored)
 data/content.db        Local SQLite mirror / offline fallback
 data/content-cache.json  Last successful Supabase fetch (gitignored)
@@ -154,10 +162,6 @@ tools/
   inspect.mjs          Section-by-section screenshots + overflow report, any page/width
   interact.mjs         Drives every homepage interaction in a real browser and reports
   mock-postgrest.mjs   Supabase test double for local end-to-end testing
-  admin-password.mjs   Sets or rotates the admin login
-  test-admin-form.mjs  Round-trips every content block through its form
-  test-admin-auth.mjs  The login, checked without a server
-  test-admin-routes.mjs  End-to-end check of the admin, against a running server
 ```
 
 ## Design system
@@ -213,6 +217,111 @@ repository rather than what this database publishes:
 
 Either way it is one place, and the whole site follows.
 
+## One server, or two
+
+`npm start` builds the site and serves it with the editor mounted on the same
+port, and points the header's **Log in** button at a sign-in page whose one form
+reaches either account:
+
+```
+http://localhost:8080         the marketing site, out of dist/
+http://localhost:8080/admin   the editor, behind the login
+```
+
+The two are still separate programs — `serve.mjs` serves static files and knows
+nothing about the database, `admin/server.mjs` is the editor — but each exports
+its request handler, so one process can answer for both. `serve.mjs` imports the
+admin **dynamically and only with `--admin`**: the Docker image copies
+`serve.mjs` and `dist/` and nothing else, and a static import would break it.
+
+| Command | Serves | /admin | `/login` built | Header **Log in** goes to |
+|---|---|---|---|---|
+| `npm start` / `npm run dev` | site + editor, port 8080 | yes | yes | `/login` |
+| `npm run serve` | site only, port 8080 | 404 | no | the product app |
+| `npm run admin` | editor only, port 8081 | — | — | — |
+| `npm run build` | *(build only)* | — | no | the product app |
+
+### The sign-in page
+
+`/login` (`src/pages/login.mjs`) is **one form** serving both of the things
+called "signing in" on this domain. You do not pick first — the username decides
+where you go:
+
+| You type | What happens |
+|---|---|
+| the admin username | the password is checked here, and you land in `/admin` |
+| anything else | you are sent to the product's own sign-in at `app.contentlineup.com` |
+
+**A non-admin password goes nowhere.** The app is a separate service with its own
+session and this site cannot authenticate against it, so a password typed by
+anyone who is not the admin is discarded on arrival — never stored, never
+logged, never forwarded. That is the only honest way to have one form: the site
+can check the one password it actually holds a hash of, and for everything else
+it can only point at the right door.
+
+Two consequences worth knowing:
+
+- The form can tell you a username is *not* the admin's, which `login()` itself
+  is careful never to reveal. Acceptable here and nowhere else: there is one
+  account, its name is in `.env` on the same machine, and the whole thing is
+  bound to loopback. What stays hidden is the part worth hiding — whether the
+  password matched.
+- A wrong admin password comes back to `/login#error` and the page shows the
+  reason with CSS `:target` — no JavaScript, like every other interaction here.
+  `#locked` is the same thing for the lockout.
+
+The form posts to `/admin/login` rather than duplicating any checking: `/login`
+is static HTML written at build time and cannot verify a password. That routing
+only applies when the admin is mounted, since `/login` is a page of the site;
+`npm run admin` on its own keeps its own plain admin login.
+
+The page is `noindex`, kept out of the sitemap, and `Disallow`ed in robots.txt.
+
+### Repointing Log in is opt-in, and off by default
+
+The header's **Log in** button has a real job on the published site: it sends
+customers to their ContentLineup account at `app.contentlineup.com`. The site is
+also static — Vercel and Netlify run `npm run build` and serve `dist/` from a CDN
+with no Node process behind it, so `/admin` does not exist there at all.
+
+Build `/login` unconditionally and the public site gains a page whose second
+half is a door into an editor that does not exist there, plus an extra click
+between a customer and their account. So it is a build flag, and off by default:
+
+- `npm run build` — exactly what the hosts run — builds no `/login` page and
+  leaves **Log in** pointing straight at the product app, as it always did.
+- `npm start` builds with `--admin-link` and serves with `--admin`, so the page,
+  the button and the editor all arrive together.
+
+A flag rather than an environment variable because `ADMIN_LINK=1 node build.mjs`
+is a syntax error in PowerShell, and this project has no cross-env dependency.
+
+On a local build the customer path still works — typing anything that is not
+the admin username sends you to the product app — so nothing is lost, it is one
+step further away than in production. `npm run serve` gives you the public
+behaviour back.
+
+Pressing **Rebuild site** in a mounted admin passes `--admin-link` too. Without
+that it would remove the only way back into itself.
+
+### Mounting
+
+The admin writes every link, form action and redirect through the prefix in
+`admin/paths.mjs`, and matches incoming routes with that prefix removed. So the
+same thirty routes serve `/content` on its own port and `/admin/content` inside
+the site, with nothing route-level aware of which. `ADMIN_BASE` carries it; the
+session cookie is scoped to it, so it is not attached to requests for the public
+pages sharing that origin.
+
+If the database is unreachable, the site still serves — the marketing pages are
+static files that never touch it — and `/admin` alone reports the problem.
+
+### It is still local
+
+`npm start` binds `0.0.0.0` so you can check the site from a phone, which means
+`/admin` is reachable from the network too, over plain http. The server says so
+on startup. `HOST=127.0.0.1 npm start` keeps it to this machine.
+
 ## The admin login
 
 `npm run admin` asks for a username and password before it shows anything.
@@ -241,6 +350,12 @@ that is never a silent state.
 
 Some details worth knowing:
 
+- **A session is tied to the admin that issued it.** A cookie is scoped to a
+  host and a path, never to a port — so the editor on its own at
+  `localhost:8081` and mounted at `localhost:8080/admin` share one cookie
+  namespace. The mount is part of the session signature, so signing in to one
+  does not let you past the other's login. Signing in twice, once for each, is
+  expected; the two sessions sit side by side and neither shadows the other.
 - **Sessions last 12 hours**, in a signed `HttpOnly`, `SameSite=Strict` cookie.
   There is no session table: the cookie carries its own expiry with an HMAC over
   it, so an edited or expired cookie fails the same check.

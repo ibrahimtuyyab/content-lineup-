@@ -1,7 +1,7 @@
 // The site's view of the pricing plans.
 //
 // Source of truth is the `plans` table in Neon, edited through the admin at
-// `node admin.mjs`. A static build must not fall over when the network hiccups
+// `npm run admin`. A static build must not fall over when the network hiccups
 // and must never publish an empty pricing page, so there are two fallbacks:
 //
 //   1. Neon                      — the live plans

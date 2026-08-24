@@ -1,7 +1,14 @@
-// Production static server for dist/ — zero dependencies.
+// The site server — zero dependencies.
 //
-//   node serve.mjs                 → http://localhost:8080
+//   node serve.mjs                 → http://localhost:8080   (the site alone)
+//   node serve.mjs --admin         → and the editor at /admin
+//   npm start                      → build with the admin link, then both
 //   PORT=3000 node serve.mjs
+//
+// With --admin it also mounts the content editor under /admin, so one command
+// and one port serve the marketing site and the thing that edits it. The admin
+// is imported only when that flag is given: the Docker image ships serve.mjs
+// and dist/ and nothing else, and must not import a module that is not there.
 //
 // Serves clean URLs (/pricing → dist/pricing/index.html), compresses text
 // responses, sets long-lived immutable caching on fingerprintable assets and
@@ -15,6 +22,9 @@ import { gzipSync, brotliCompressSync, constants } from 'node:zlib';
 const ROOT = resolve(import.meta.dirname, 'dist');
 const PORT = Number(process.env.PORT) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
+
+/** dist/, so a caller mounting this can check for it too. */
+export const DIST = ROOT;
 
 if (!existsSync(ROOT)) {
   console.error('dist/ not found. Run `npm run build` first.');
@@ -51,15 +61,33 @@ const encode = (buf, ext) => {
   };
 };
 
+/**
+ * Read a file, compressed and with its ETag, remembering the result.
+ *
+ * The cached copy is keyed on the file's size and modification time, not just
+ * its path. A plain path cache is correct for a container that builds once and
+ * then only serves — but this same server now sits behind the admin's "Rebuild
+ * site" button, which rewrites all of dist/ underneath it. Serving the bytes
+ * from before the rebuild made that button look broken: the page reloads and
+ * nothing has changed.
+ *
+ * One stat per request either way — the ETag already needed it.
+ */
 const load = (file) => {
-  if (cache.has(file)) return cache.get(file);
+  const stat = statSync(file);
+  const stamp = `${stat.size.toString(16)}-${Math.round(stat.mtimeMs).toString(16)}`;
+
+  const hit = cache.get(file);
+  if (hit && hit.stamp === stamp) return hit;
+
   const buf = readFileSync(file);
   const ext = extname(file).toLowerCase();
   const entry = {
     buf,
     ext,
+    stamp,
     type: TYPES[ext] || 'application/octet-stream',
-    etag: `W/"${statSync(file).size.toString(16)}-${Math.round(statSync(file).mtimeMs).toString(16)}"`,
+    etag: `W/"${stamp}"`,
     enc: encode(buf, ext),
   };
   cache.set(file, entry);
@@ -83,7 +111,11 @@ function resolveFile(urlPath) {
   return null;
 }
 
-const server = createServer((req, res) => {
+/**
+ * Serve one request out of dist/. Exported so the combined server can hand it
+ * everything that is not the admin.
+ */
+export const staticHandler = (req, res) => {
   const started = Date.now();
   const urlPath = req.url || '/';
 
@@ -154,10 +186,10 @@ const server = createServer((req, res) => {
       `${notFound ? 404 : 200}  ${bare.padEnd(56)} ${String(body.length).padStart(8)}b  ${Date.now() - started}ms`
     );
   }
-});
+};
 
 /** Every non-internal IPv4 address, so the LAN URL never has to be guessed. */
-function lanAddresses() {
+export function lanAddresses() {
   const out = [];
   for (const [name, addrs] of Object.entries(networkInterfaces())) {
     for (const a of addrs || []) {
@@ -166,6 +198,69 @@ function lanAddresses() {
   }
   return out;
 }
+
+/* ------------------------------------------------------------------- admin */
+
+/**
+ * Mount the content editor under /admin, on this same port.
+ *
+ * Imported dynamically and only when asked for. Two reasons, both real:
+ * the Docker image copies serve.mjs and dist/ and nothing else, so a static
+ * import of ../admin would break the image outright; and importing the admin
+ * opens a database connection, which a plain static server has no business
+ * doing.
+ *
+ * ADMIN_BASE is set before the import because admin/paths.mjs reads it at
+ * module scope — it is what every link, form action and redirect in the admin
+ * is prefixed with.
+ */
+const ADMIN_MOUNT = '/admin';
+
+async function loadAdmin() {
+  process.env.ADMIN_BASE = ADMIN_MOUNT;
+  const mod = await import('./admin/server.mjs');
+  return mod;
+}
+
+const wantsAdmin = process.argv.includes('--admin') || process.env.ADMIN === '1';
+
+let admin = null;
+let adminError = null;
+if (wantsAdmin) {
+  try {
+    admin = await loadAdmin();
+  } catch (err) {
+    // The site is static files and does not need the database, so a store that
+    // is unreachable takes out /admin and nothing else.
+    adminError = err;
+  }
+}
+
+const onAdminPath = (url) => {
+  const path = url.split('?')[0];
+  return path === ADMIN_MOUNT || path.startsWith(ADMIN_MOUNT + '/');
+};
+
+/** What /admin says when it could not be loaded. */
+const adminUnavailable = (res) => {
+  const body =
+    'The content editor could not start.\n\n' +
+    String(adminError?.message || 'Unknown error') +
+    '\n\nThe site itself is unaffected.\n';
+  res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(body);
+};
+
+const handler = (req, res) => {
+  if (wantsAdmin && onAdminPath(req.url || '/')) {
+    return admin ? admin.handler(req, res) : adminUnavailable(res);
+  }
+  return staticHandler(req, res);
+};
+
+/* ------------------------------------------------------------------ listen */
+
+const server = createServer(handler);
 
 server.listen(PORT, HOST, () => {
   console.log(`\nContentLineup is live — serving ${ROOT}\n`);
@@ -178,6 +273,20 @@ server.listen(PORT, HOST, () => {
     if (!lan.length) console.log('  Network  no external network interface found');
   } else {
     console.log(`  Bound to ${HOST} only — set HOST=0.0.0.0 to allow other devices`);
+  }
+
+  if (wantsAdmin && admin) {
+    console.log(`\n  Admin    http://localhost:${PORT}${ADMIN_MOUNT}`);
+    console.log(`  Store    ${admin.describeStore()}`);
+    console.log('  ' + admin.describeAuth().replace(/^Login: +/, 'Login    ').replace(/\n/g, '\n  '));
+    if (HOST === '0.0.0.0' || HOST === '::') {
+      console.log(
+        `\n  ${ADMIN_MOUNT} is reachable from every device on this network, over plain http.\n` +
+          '  Set HOST=127.0.0.1 to keep it to this machine.'
+      );
+    }
+  } else if (wantsAdmin) {
+    console.log(`\n  Admin    failed to start — ${String(adminError?.message || '').split('\n')[0]}`);
   }
   console.log('');
 });

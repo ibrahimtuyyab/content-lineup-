@@ -30,6 +30,52 @@ async function admin() {
   return mod;
 }
 
+/**
+ * What to say when the login is not configured — and what this deployment can
+ * actually see, since that is the only question that matters here.
+ *
+ * "Set these variables" is not much help to someone who believes they already
+ * did: the two ways that happens are a variable ticked for the wrong
+ * environment, and a variable added after the running deployment was built.
+ * Both look identical from outside. So the page reports which names are
+ * visible, and which environment Vercel says this is, which distinguishes them.
+ *
+ * Names only, never values. `DATABASE_URL` is listed the same way, because a
+ * deployment that can see it and not `ADMIN_USER` has variables scoped to
+ * different environments — which is the answer, and is otherwise invisible.
+ */
+const notConfigured = (missing) => {
+  const known = ['ADMIN_USER', 'ADMIN_PASSWORD_HASH', 'ADMIN_SESSION_SECRET', 'DATABASE_URL'];
+  const seen = known.filter((k) => (process.env[k] || '').trim());
+  const absent = known.filter((k) => !seen.includes(k));
+  const where = process.env.VERCEL_ENV || 'unknown';
+
+  return [
+    'The admin is not configured, and will not run unprotected on a public URL.',
+    '',
+    `Missing: ${missing.join(', ')}`,
+    '',
+    '--- what this deployment can see ---------------------------------------',
+    `  environment   ${where}${where === 'preview' ? '   (a Preview URL, not Production)' : ''}`,
+    `  set           ${seen.length ? seen.join(', ') : '(none of them)'}`,
+    `  not set       ${absent.join(', ')}`,
+    '------------------------------------------------------------------------',
+    '',
+    seen.includes('DATABASE_URL') && !seen.includes('ADMIN_USER')
+      ? `DATABASE_URL is visible here but ADMIN_USER is not, so this deployment does\n` +
+        `read some variables. The ADMIN_ ones are almost certainly ticked for a\n` +
+        `different environment than "${where}" — open each one and tick "${where}".`
+      : `Add them in Vercel → Project → Settings → Environment Variables, tick\n` +
+        `"${where === 'unknown' ? 'Production' : where}", and redeploy.`,
+    '',
+    'Then redeploy. Variables added after a deployment do not reach the one',
+    'already running: Deployments → ⋯ on the latest → Redeploy.',
+    '',
+    'The values are the ADMIN_ lines in your local .env. Print them with:',
+    '  npm run admin:password -- --show',
+  ].join('\n');
+};
+
 const fail = (res, status, message) => {
   res.statusCode = status;
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -80,21 +126,7 @@ export default async function handler(req, res) {
   // database here. So deployed, an unconfigured login is a refusal, not a
   // convenience. Locally nothing changes.
   if (!loaded.authEnabled()) {
-    const missing = loaded.authMissing();
-    return fail(
-      res,
-      503,
-      'The admin is not configured, and will not run unprotected on a public URL.\n\n' +
-        `This deployment cannot see: ${missing.join(', ')}\n\n` +
-        'Add them in Vercel → Project → Settings → Environment Variables, then\n' +
-        'redeploy — variables added after a deployment do not reach the one already\n' +
-        'running. Two things to check if they look like they are already set:\n\n' +
-        '  1. Environment. A variable ticked only for Preview is invisible in\n' +
-        '     Production, and vice versa. Tick the one this URL is.\n' +
-        '  2. Redeploy. Settings → Deployments → ⋯ → Redeploy on the latest one.\n\n' +
-        'The values are the ADMIN_ lines in your local .env. Print them with:\n' +
-        '  npm run admin:password -- --show'
-    );
+    return fail(res, 503, notConfigured(loaded.authMissing()));
   }
 
   return loaded.handler(req, res);

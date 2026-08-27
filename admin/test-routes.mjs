@@ -54,7 +54,15 @@ const rawFetch = globalThis.fetch;
 const fetch = (url, opts = {}) =>
   rawFetch(url, {
     ...opts,
-    headers: { ...(opts.headers || {}), ...(COOKIE ? { Cookie: COOKIE } : {}) },
+    headers: {
+      // What this suite is, is a browser moving around inside the admin, so it
+      // says so. Arriving from outside — no Referer, no Sec-Fetch-Site — is now
+      // a reason to ask for the password again, and every page fetched below
+      // would otherwise come back as a redirect to the sign-in form.
+      Referer: `${BASE}/`,
+      ...(opts.headers || {}),
+      ...(COOKIE ? { Cookie: COOKIE } : {}),
+    },
   });
 
 const USER = process.env.ADMIN_TEST_USER || process.env.ADMIN_USER || 'admin';
@@ -652,11 +660,31 @@ if (gated) {
   const inside = await fetch(`${BASE}/plans`, { headers: navigation('same-origin') });
   check('a link inside the admin does not', inside.status === 200, `got ${inside.status}`);
 
-  // Nothing else sends the header, and a missing one must not lock out a
-  // session that is otherwise good — this sits on top of the password, not in
-  // place of it.
-  const headerless = await fetch(`${BASE}/plans`);
-  check('a client that sends no such header still works', headerless.status === 200, `got ${headerless.status}`);
+  // A client that sends no Sec-Fetch-Site at all — an older browser, or a proxy
+  // that dropped it — is judged by its Referer instead, because a rule that
+  // fails open is a rule that is not there. None at all reads as a typed URL.
+  const bare = await rawFetch(`${BASE}/plans`, { headers: { Cookie: COOKIE }, redirect: 'manual' });
+  check('no Sec-Fetch and no Referer reads as a typed URL', bare.status === 303, `got ${bare.status}`);
+
+  const referred = await fetch(`${BASE}/plans`, {
+    headers: { Referer: `${BASE}/` },
+    redirect: 'manual',
+  });
+  check('a Referer from the admin reads as inside it', referred.status === 200, `got ${referred.status}`);
+
+  const elsewhere = await fetch(`${BASE}/plans`, {
+    headers: { Referer: 'https://example.com/' },
+    redirect: 'manual',
+  });
+  check('a Referer from another site does not', elsewhere.status === 303, `got ${elsewhere.status}`);
+
+  // The page that reports all this is exempt, or it could never be reached to
+  // report it.
+  const diag = await fetch(`${BASE}/check`, { headers: navigation('none') });
+  check('the check page is reachable by typing its address', diag.status === 200, `got ${diag.status}`);
+  const html = await diag.text();
+  check('and says what it saw', html.includes('arrivedFromOutside'), 'no verdict on the page');
+  check('without ever printing the cookie', !/cl_admin=/.test(html), 'the session cookie was echoed');
 }
 
 // 15. Signing out ends the session. Last, because everything after it would

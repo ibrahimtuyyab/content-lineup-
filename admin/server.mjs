@@ -845,18 +845,38 @@ const toLogin = (req, res, next = '/', { endSession = false } = {}) => {
  * session.
  */
 const arrivedFromOutside = (req) => {
-  const site = req.headers['sec-fetch-site'];
-  if (site !== 'none' && site !== 'cross-site') return false;
+  // Not a page at all — a subresource fetched by one. Never a fresh arrival.
   const dest = req.headers['sec-fetch-dest'];
-  return dest === undefined || dest === 'document';
+  if (dest && dest !== 'document') return false;
+
+  const site = req.headers['sec-fetch-site'];
+  if (site) return site === 'none' || site === 'cross-site';
+
+  // No Sec-Fetch-Site: an older browser, or a proxy that dropped it. Fall back
+  // to where the browser says it came from, which is the same question asked a
+  // cruder way — a typed URL and a bookmark send no Referer, a link inside the
+  // admin sends this origin. Two signals rather than one, because the rule
+  // failing open is the one outcome worth engineering against: it is the
+  // difference between asking for the password and not.
+  const ref = req.headers.referer;
+  if (!ref) return true;
+  try {
+    return new URL(ref).host !== (req.headers['x-forwarded-host'] || req.headers.host);
+  } catch {
+    return true;
+  }
 };
 
 /**
  * How new a session has to be to survive arriving from outside: long enough to
  * cover the redirect out of the sign-in form, short enough that it is not a way
  * back in. See auth.sessionAge().
+ *
+ * Eight seconds, because the only thing it has to cover is a redirect that
+ * happens immediately — and because anything longer is a window in which the
+ * URL still opens the editor, which is the whole thing this is here to stop.
  */
-const JUST_SIGNED_IN = 20_000;
+const JUST_SIGNED_IN = 8_000;
 
 /**
  * A refusal that points at the one sign-in form.
@@ -1046,8 +1066,13 @@ export const handler = async (req, res) => {
     //
     // The session ends here rather than being ignored, so what happens next is
     // an ordinary signed-out visit and there is no half-signed-in state.
+    //
+    // /check is the exception, and has to be: it is the page that reports what
+    // this rule saw, and it would be no use if reaching it were the one thing
+    // the rule forbids.
     if (
       method === 'GET' &&
+      path !== '/check' &&
       auth.enabled &&
       auth.isLoggedIn(req) &&
       arrivedFromOutside(req) &&
@@ -1070,6 +1095,70 @@ export const handler = async (req, res) => {
         return send(res, 401, B ? deniedView(expired) : loginView(layout, { error: expired, next: '/' }));
       }
       return toLogin(req, res, path + url.search);
+    }
+
+    /* --------------------------------------------------------------- check */
+    /**
+     * What this request looked like to the admin.
+     *
+     * The re-entry rule above turns on headers the browser attaches and a proxy
+     * in between could in principle drop — and "it does not ask for the password
+     * when I type the URL" looks identical whether the header never arrived or
+     * the rule is simply wrong. This is how to tell, on the host it is actually
+     * running on, without guessing: sign in, open /admin/check, read what it
+     * saw and what it decided.
+     *
+     * Behind the session guard, so only someone already signed in can see it,
+     * and it prints a fixed list of headers — never the cookie, which is the
+     * one header on a request to this admin that is a credential.
+     */
+    if (method === 'GET' && path === '/check') {
+      const seen = [
+        'sec-fetch-site',
+        'sec-fetch-mode',
+        'sec-fetch-dest',
+        'referer',
+        'host',
+        'x-forwarded-host',
+        'x-forwarded-proto',
+      ];
+      const rows = seen
+        .map(
+          (h) =>
+            `<tr><td><code>${h}</code></td><td>${
+              req.headers[h] === undefined ? '<em>absent</em>' : `<code>${esc(String(req.headers[h]))}</code>`
+            }</td></tr>`
+        )
+        .join('');
+      const outside = arrivedFromOutside(req);
+      const age = auth.sessionAge(req);
+      const fresh = age <= JUST_SIGNED_IN;
+      const verdict = !auth.enabled
+        ? 'no login is configured on this deployment'
+        : outside && !fresh
+        ? 'this arrival would be sent back to the sign-in form'
+        : outside
+        ? `treated as arriving from outside, but the sign-in is only ${Math.round(age / 1000)}s old, so it is let through`
+        : 'treated as moving around inside the admin, so no password is asked for';
+      return send(
+        res,
+        200,
+        layout(
+          'Check',
+          `<h1>What this request looked like</h1>
+           <p class="sub">Type this page's address to see a fresh arrival; click it from
+             the admin to see an inside one. This page itself is exempt from the rule.</p>
+           <table><tbody>${rows}
+             <tr><td><code>arrivedFromOutside</code></td><td><code>${outside}</code></td></tr>
+             <tr><td>session age</td><td><code>${age === Infinity ? 'no session' : `${Math.round(age / 1000)}s`}</code></td></tr>
+             <tr><td>deployment</td><td><code>${esc(
+               process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA || 'local'
+             )}</code></td></tr>
+           </tbody></table>
+           <p><strong>${esc(verdict)}</strong></p>
+           <p><a class="btn ghost" href="${HOME}">Back to posts</a></p>`
+        )
+      );
     }
 
     /* ------------------------------------------------------------- pricing */

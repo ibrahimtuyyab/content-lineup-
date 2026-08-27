@@ -472,10 +472,15 @@ Some details worth knowing:
   was, and the values were checked in a real browser rather than assumed:
   typing gives `none`; a link inside gives `same-origin`; and so — the two that
   would otherwise be miserable — do reload, and the redirect out of the sign-in
-  form. A sign-in less than 20 seconds old is let through regardless, so no
-  browser can turn that redirect into a loop, and a client that sends no such
-  header is treated as an ordinary navigation: this sits on top of the password,
-  not in place of it.
+  form. A request that carries no `Sec-Fetch-Site` at all is judged by its
+  `Referer` instead — none at all reads as a typed URL — because the one way
+  this rule must not fail is open. A sign-in less than 8 seconds old is let
+  through regardless, so no browser can turn that redirect into a loop.
+- **`/admin/check` says what the admin saw**, for when the answer depends on
+  what survived the trip through a host. It prints the headers this rule turns
+  on, what it decided, and which deployment answered — behind the session, never
+  the cookie, and exempt from the rule above so that typing its address is a way
+  to see a fresh arrival rather than a way to be bounced off it.
 - **No `Secure` flag**, because the admin is http on loopback and a Secure cookie
   would never be stored. `SameSite=Strict` is what covers the cross-site case.
 - **Leave `ADMIN_SESSION_SECRET` blank** and one is generated per start — which

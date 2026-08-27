@@ -51,6 +51,18 @@ check('the right credentials are accepted', good.ok);
 
 const value = decodeURIComponent(/cl_admin=([^;]*)/.exec(good.cookie)[1]);
 check('the session is accepted back', auth.isLoggedIn(asReq(`cl_admin=${encodeURIComponent(value)}`)));
+
+// The browser must not keep this past the window it was opened in: no Max-Age
+// and no Expires is what makes it a session cookie rather than a stored one.
+check('the session cookie is not stored on disk', !/Max-Age|Expires/i.test(good.cookie), good.cookie);
+check('it is HttpOnly and same-site', /HttpOnly/.test(good.cookie) && /SameSite=Strict/.test(good.cookie));
+
+// And the server's own limit, which is the one that holds even if a browser
+// keeps the cookie anyway: two hours from the sign-in, in the signed value.
+{
+  const hours = (Number(value.split('.')[1]) - Date.now()) / 3600_000;
+  check('the session expires in about two hours', hours > 1.9 && hours <= 2, `got ${hours.toFixed(2)}h`);
+}
 check(
   'the session survives other cookies alongside it',
   auth.isLoggedIn(asReq(`theme=dark; cl_admin=${encodeURIComponent(value)}; other=1`))

@@ -454,9 +454,14 @@ Some details worth knowing:
   namespace. The mount is part of the session signature, so signing in to one
   does not let you past the other's login. Signing in twice, once for each, is
   expected; the two sessions sit side by side and neither shadows the other.
-- **Sessions last 12 hours**, in a signed `HttpOnly`, `SameSite=Strict` cookie.
-  There is no session table: the cookie carries its own expiry with an HMAC over
-  it, so an edited or expired cookie fails the same check.
+- **Sessions last two hours, and die when the browser closes.** The cookie is
+  signed, `HttpOnly`, `SameSite=Strict`, and carries no `Max-Age` or `Expires`,
+  so the browser holds it only for the window it was opened in and never writes
+  it to disk. The two hours are inside the signed value and checked server-side,
+  which is the limit that holds even if a browser keeps the cookie anyway. There
+  is no session table: an edited or expired cookie fails the same check.
+  This is what stops `/admin` typed into the address bar from opening the editor
+  for whoever is at the machine an hour after you walked away.
 - **No `Secure` flag**, because the admin is http on loopback and a Secure cookie
   would never be stored. `SameSite=Strict` is what covers the cross-site case.
 - **Leave `ADMIN_SESSION_SECRET` blank** and one is generated per start — which

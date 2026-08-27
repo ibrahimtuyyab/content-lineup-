@@ -23,7 +23,16 @@ import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'node:crypt
 import { BASE as B } from './paths.mjs';
 
 const COOKIE = 'cl_admin';
-const SESSION_HOURS = 12;
+
+/**
+ * How long a sign-in lasts.
+ *
+ * Two hours, not a working day. This is a content editor: a session is worth
+ * exactly as long as the sitting it was opened for, and every hour past that is
+ * an hour in which typing /admin into the address bar opens the editor for
+ * whoever is at the machine. Signing in again is one form.
+ */
+const SESSION_HOURS = 2;
 
 /* ------------------------------------------------------------------ hashing */
 
@@ -259,10 +268,16 @@ export function createAuth(env = process.env) {
  * would then be attached to every request for a page, an image and a font on
  * the public side of that origin — for no reason, since only the admin ever
  * reads it.
+ *
+ * No `Max-Age` and no `Expires`, so the browser holds it only until it closes.
+ * A cookie with a lifetime is written to disk and survives the window, the
+ * laptop lid and the walk away from the desk; this one does not. The expiry
+ * that matters is inside the value and checked here — the browser dropping it
+ * sooner is a second, stricter limit, not the only one.
  */
-const cookieHeader = (value, { secure = false, maxAge = SESSION_HOURS * 3600 } = {}) =>
+const cookieHeader = (value, { secure = false, maxAge = null } = {}) =>
   `${COOKIE}=${encodeURIComponent(value)}; Path=${B || '/'}; HttpOnly; SameSite=Strict` +
-  `${secure ? '; Secure' : ''}; Max-Age=${maxAge}`;
+  `${secure ? '; Secure' : ''}${maxAge === null ? '' : `; Max-Age=${maxAge}`}`;
 
 /* ---------------------------------------------------------------- login page */
 

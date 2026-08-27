@@ -462,6 +462,20 @@ Some details worth knowing:
   is no session table: an edited or expired cookie fails the same check.
   This is what stops `/admin` typed into the address bar from opening the editor
   for whoever is at the machine an hour after you walked away.
+- **Arriving from outside the admin asks for the password again**, session or
+  no session. A session is what lets you move around the editor without retyping
+  a password on every link; it was never meant to be a standing invitation to
+  the URL. So typing `/admin` into the address bar, opening a bookmark, or
+  following a link from another site ends the session and returns you to
+  `/login` — while clicking around inside the admin, and reloading, carry on as
+  before. `Sec-Fetch-Site` is the browser's own account of which of those it
+  was, and the values were checked in a real browser rather than assumed:
+  typing gives `none`; a link inside gives `same-origin`; and so — the two that
+  would otherwise be miserable — do reload, and the redirect out of the sign-in
+  form. A sign-in less than 20 seconds old is let through regardless, so no
+  browser can turn that redirect into a loop, and a client that sends no such
+  header is treated as an ordinary navigation: this sits on top of the password,
+  not in place of it.
 - **No `Secure` flag**, because the admin is http on loopback and a Secure cookie
   would never be stored. `SameSite=Strict` is what covers the cross-site case.
 - **Leave `ADMIN_SESSION_SECRET` blank** and one is generated per start — which

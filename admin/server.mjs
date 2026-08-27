@@ -805,17 +805,58 @@ const redirect = (res, to) => {
  * Always set: a stale one from an earlier visit would otherwise decide where
  * this sign-in lands.
  */
-const toLogin = (req, res, next = '/') => {
-  if (!B) return redirect(res, `/login?next=${encodeURIComponent(next)}`);
+const toLogin = (req, res, next = '/', { endSession = false } = {}) => {
   const secure = isSecureRequest(req);
   const wanted = safeNext(next);
+  const cookies = endSession ? [auth.logoutCookie({ secure })] : [];
+
+  if (!B) {
+    res.writeHead(303, {
+      Location: u(`/login?next=${encodeURIComponent(wanted)}`),
+      ...(cookies.length ? { 'Set-Cookie': cookies } : {}),
+    });
+    return res.end();
+  }
+
+  cookies.push(wanted === '/' ? clearNextCookie({ secure }) : nextCookie(wanted, { secure }));
   res.writeHead(303, {
     Location: LOGIN_PATH,
     'Cache-Control': 'no-store',
-    'Set-Cookie': wanted === '/' ? clearNextCookie({ secure }) : nextCookie(wanted, { secure }),
+    'Set-Cookie': cookies,
   });
   res.end();
 };
+
+/**
+ * Did this request arrive from outside the admin — a typed URL, a bookmark, a
+ * new tab, a link on another site — rather than from moving around inside it?
+ *
+ * Sec-Fetch-Site is the browser's own answer to that, attached by Chrome,
+ * Firefox and Safari and impossible for a page to forge. Checked against a real
+ * browser rather than assumed, because the whole re-entry rule below rests on
+ * it: typing the URL gives `none`; clicking a link inside the admin gives
+ * `same-origin`; and — the two that would otherwise be miserable — so do
+ * pressing reload, and the redirect that lands you in the admin straight after
+ * signing in.
+ *
+ * A client that sends no such header is treated as an ordinary in-admin
+ * navigation. This sits on top of the password, not in place of it, and a
+ * missing header is not a reason to lock out a browser that has a valid
+ * session.
+ */
+const arrivedFromOutside = (req) => {
+  const site = req.headers['sec-fetch-site'];
+  if (site !== 'none' && site !== 'cross-site') return false;
+  const dest = req.headers['sec-fetch-dest'];
+  return dest === undefined || dest === 'document';
+};
+
+/**
+ * How new a session has to be to survive arriving from outside: long enough to
+ * cover the redirect out of the sign-in form, short enough that it is not a way
+ * back in. See auth.sessionAge().
+ */
+const JUST_SIGNED_IN = 20_000;
 
 /**
  * A refusal that points at the one sign-in form.
@@ -989,6 +1030,30 @@ export const handler = async (req, res) => {
         'Set-Cookie': auth.logoutCookie({ secure: isSecureRequest(req) }),
       });
       return res.end();
+    }
+
+    // Arriving at the admin from outside it — typing /admin into the address
+    // bar, a bookmark, a new tab, a link from somewhere else — asks for the
+    // password again, session or no session.
+    //
+    // A session is what lets you move around the editor without retyping a
+    // password on every link; it was never meant to be a standing invitation to
+    // the URL. Without this, signing in once meant /admin opened the editor for
+    // anyone who typed it on that machine until the session expired. Now the
+    // session covers the sitting it was opened for, and each fresh arrival is a
+    // fresh sign-in. Clicking around inside — and reloading — carries on as it
+    // did; see arrivedFromOutside().
+    //
+    // The session ends here rather than being ignored, so what happens next is
+    // an ordinary signed-out visit and there is no half-signed-in state.
+    if (
+      method === 'GET' &&
+      auth.enabled &&
+      auth.isLoggedIn(req) &&
+      arrivedFromOutside(req) &&
+      auth.sessionAge(req) > JUST_SIGNED_IN
+    ) {
+      return toLogin(req, res, path + url.search, { endSession: true });
     }
 
     // Everything past this point needs a session.

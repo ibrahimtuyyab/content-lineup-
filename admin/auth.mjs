@@ -177,6 +177,7 @@ export function createAuth(env = process.env) {
           ? 'ADMIN_USER and ADMIN_PASSWORD_HASH are not set'
           : `${missing[0]} is not set (the other one is)`,
       isLoggedIn: () => true,
+      sessionAge: () => Infinity,
     };
   }
 
@@ -214,6 +215,23 @@ export function createAuth(env = process.env) {
     user,
 
     isLoggedIn: (req) => readCookies(req, COOKIE).some((c) => valid(key, user, c)),
+
+    /**
+     * How long ago the session on this request was signed, in milliseconds —
+     * Infinity when there is no valid one.
+     *
+     * For the re-entry check in the server: arriving at the admin from outside
+     * it asks for the password again, and a sign-in that has only just happened
+     * must not be asked to happen again. Chrome calls the redirect that follows
+     * a sign-in same-origin, so it would not trigger anyway; this is what makes
+     * that true of every browser rather than the one that was tested.
+     */
+    sessionAge: (req) => {
+      const c = readCookies(req, COOKIE).find((one) => valid(key, user, one));
+      if (!c) return Infinity;
+      const until = Number(String(c).split('.')[1]);
+      return Date.now() - (until - SESSION_HOURS * 3600_000);
+    },
 
     /**
      * Is this name the admin's?

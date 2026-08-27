@@ -49,6 +49,7 @@ const check = (name, cond, why) => (cond ? ok(name) : bad(name, why));
 // Every request below needs the session cookie, so the global is shadowed once
 // here rather than threaded through forty call sites.
 let COOKIE = '';
+let SIGNED_IN_AT = 0;
 const rawFetch = globalThis.fetch;
 const fetch = (url, opts = {}) =>
   rawFetch(url, {
@@ -285,6 +286,7 @@ if (gated) {
   check('the right credentials are accepted', good.status === 303, `got ${good.status}`);
   check('signing in issues a session cookie', good.cookie.startsWith('cl_admin='), 'no cookie');
   COOKIE = good.cookie;
+  SIGNED_IN_AT = Date.now();
 
   // A session must not carry across to the same editor reached another way.
   // Cookies ignore ports, so localhost:8081 and localhost:8080/admin share a
@@ -610,6 +612,51 @@ if (gated) {
     const res = await fetch(`${BASE}${path}`);
     check(`the ${name} page still renders`, res.status === 200, `got ${res.status}`);
   }
+}
+
+// 14.5 Arriving at the admin from outside it asks for the password again, even
+//      with a session in hand. Sec-Fetch-Site is how the browser says which it
+//      was: `none` for a typed URL or a bookmark, `same-origin` for a link
+//      inside the admin — and, checked in a real browser, for a reload and for
+//      the redirect out of the sign-in form too.
+//
+//      Second to last, because it ends the session server-side... which it does
+//      not, in fact: there is no session table, so the cookie this suite holds
+//      stays valid. It is the browser that is told to drop it.
+if (gated) {
+  const navigation = (site) => ({
+    'Sec-Fetch-Site': site,
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Dest': 'document',
+  });
+
+  // A sign-in that has only just happened is let through, so the redirect out
+  // of the form cannot loop. Wait that window out rather than assert around it.
+  const grace = 21_000 - (Date.now() - SIGNED_IN_AT);
+  if (grace > 0) await new Promise((r) => setTimeout(r, grace));
+
+  const typed = await fetch(`${BASE}/plans`, { headers: navigation('none'), redirect: 'manual' });
+  check('a typed URL asks again despite a session', typed.status === 303, `got ${typed.status}`);
+  check(
+    'and the browser is told to drop the session',
+    /cl_admin=;/.test(String(typed.headers.get('set-cookie') || '')),
+    `got "${typed.headers.get('set-cookie')}"`
+  );
+
+  const fromAnotherSite = await fetch(`${BASE}/plans`, {
+    headers: navigation('cross-site'),
+    redirect: 'manual',
+  });
+  check('so does a link from another site', fromAnotherSite.status === 303, `got ${fromAnotherSite.status}`);
+
+  const inside = await fetch(`${BASE}/plans`, { headers: navigation('same-origin') });
+  check('a link inside the admin does not', inside.status === 200, `got ${inside.status}`);
+
+  // Nothing else sends the header, and a missing one must not lock out a
+  // session that is otherwise good — this sits on top of the password, not in
+  // place of it.
+  const headerless = await fetch(`${BASE}/plans`);
+  check('a client that sends no such header still works', headerless.status === 200, `got ${headerless.status}`);
 }
 
 // 15. Signing out ends the session. Last, because everything after it would

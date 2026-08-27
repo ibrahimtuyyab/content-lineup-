@@ -37,8 +37,20 @@ export const BASE = readBase(process.env.ADMIN_BASE);
 /**
  * A path on the admin, prefixed. For the places a template literal is not
  * already in play — redirects, and the Location header.
+ *
+ * The admin's own root is `/`, which naively prefixed gives `/admin/` — and a
+ * host configured for no trailing slashes answers that with a redirect to
+ * `/admin` before the request ever reaches this code. Everything still works,
+ * through an extra round trip on the one URL people land on most: the page you
+ * arrive at straight after signing in. So the root collapses to the mount.
  */
-export const u = (path = '/') => BASE + path;
+export const u = (path = '/') => (path === '/' ? HOME : BASE + path);
+
+/**
+ * The admin's front page, as a link. `/admin` when mounted, `/` when not.
+ * Written out because `${BASE}/` is the trailing-slash trap described above.
+ */
+export const HOME = BASE || '/';
 
 /**
  * The path as the admin's own routes see it: with the mount prefix taken off.

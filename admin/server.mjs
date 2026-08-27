@@ -62,8 +62,16 @@ import {
   authorEditView,
   categoryEditView,
 } from './content-views.mjs';
-import { createAuth, loginView, safeNext, lockedFor } from './auth.mjs';
-import { BASE as B, u, strip } from './paths.mjs';
+import {
+  createAuth,
+  loginView,
+  safeNext,
+  lockedFor,
+  nextCookie,
+  clearNextCookie,
+  readNext,
+} from './auth.mjs';
+import { BASE as B, u, strip, HOME } from './paths.mjs';
 import { LOGIN_PATH } from '../src/lib/admin-link.mjs';
 import { onVercel, deployHook, isSecureRequest } from './platform.mjs';
 
@@ -276,7 +284,7 @@ const layout = (title, body, flash = '', bare = false) => `<!doctype html>
     bare
       ? ''
       : `<div class="right">
-    <a class="btn ghost sm" href="${B}/">Posts</a>
+    <a class="btn ghost sm" href="${HOME}">Posts</a>
     <a class="btn ghost sm" href="${B}/plans">Pricing</a>
     <a class="btn ghost sm" href="${B}/content">Site content</a>
     <a class="btn ghost sm" href="${B}/reference">Authors</a>
@@ -508,7 +516,7 @@ Cell 1   | Cell 2
 
       <div class="full actions" style="margin-top:8px">
         <button class="btn" type="submit">Save</button>
-        <a class="btn ghost" href="${B}/">Cancel</a>
+        <a class="btn ghost" href="${HOME}">Cancel</a>
         ${
           isNew
             ? ''
@@ -779,6 +787,56 @@ const redirect = (res, to) => {
   res.end();
 };
 
+/**
+ * Send someone who is not signed in to the sign-in form.
+ *
+ * There is one form. Mounted inside the site it is /login — the page the
+ * header's Log in button opens, which asks the same two questions for the
+ * product and for this admin and decides from the username which one was
+ * meant. The admin used to answer /admin with a second, plainer form of its
+ * own; one origin does not need two sign-in pages, so mounted it no longer has
+ * one and every way in goes through the site's.
+ *
+ * Standalone (`npm run admin`) there is no site next to it and no /login page
+ * to send anyone to, so there it still renders its own — see loginView.
+ *
+ * Where they were headed rides along in a cookie rather than the URL, because
+ * /login is a built static page that cannot read a `?next=` out of its own.
+ * Always set: a stale one from an earlier visit would otherwise decide where
+ * this sign-in lands.
+ */
+const toLogin = (req, res, next = '/') => {
+  if (!B) return redirect(res, `/login?next=${encodeURIComponent(next)}`);
+  const secure = isSecureRequest(req);
+  const wanted = safeNext(next);
+  res.writeHead(303, {
+    Location: LOGIN_PATH,
+    'Cache-Control': 'no-store',
+    'Set-Cookie': wanted === '/' ? clearNextCookie({ secure }) : nextCookie(wanted, { secure }),
+  });
+  res.end();
+};
+
+/**
+ * A refusal that points at the one sign-in form.
+ *
+ * Only ever reached by a POST the form did not make — a tab left open past its
+ * session, or something scripted. It answers 401 rather than redirecting, so
+ * the status still says what happened, and it carries no form of its own: the
+ * form is at /login and this page is a signpost to it.
+ */
+const deniedView = (message) =>
+  layout(
+    'Sign in',
+    `<div class="login">
+       <h1>Sign in</h1>
+       <div class="flash err">${esc(message)}</div>
+       <p class="hint"><a class="btn" href="${LOGIN_PATH}">Go to the sign-in page</a></p>
+     </div>`,
+    '',
+    true
+  );
+
 const flashOk = (msg) => `<div class="flash ok">${esc(msg)}</div>`;
 const flashErr = (msg) => `<div class="flash err">${esc(msg)}</div>`;
 
@@ -864,6 +922,10 @@ export const handler = async (req, res) => {
     /* ----------------------------------------------------------------- login */
     if (method === 'GET' && path === '/login') {
       if (!auth.enabled || auth.isLoggedIn(req)) return redirect(res, '/');
+      // Mounted, the form is the site's own /login and this path is reached
+      // only by an old link or a bookmark. Hand it on rather than growing a
+      // second form here — see toLogin.
+      if (B) return toLogin(req, res, url.searchParams.get('next') || '/');
       return send(res, 200, loginView(layout, { next: url.searchParams.get('next') || '/' }));
     }
 
@@ -886,7 +948,8 @@ export const handler = async (req, res) => {
         return res.end();
       }
 
-      const result = auth.login(username, f.get('password'), { secure: isSecureRequest(req) });
+      const secure = isSecureRequest(req);
+      const result = auth.login(username, f.get('password'), { secure });
       if (!result.ok) {
         // Back to whichever form was used, so a typo is corrected where it was
         // made. The site's page reads the reason off the fragment (CSS :target,
@@ -896,18 +959,33 @@ export const handler = async (req, res) => {
           return res.end();
         }
         // 401, not 200: a failed sign-in is a failed sign-in, and saying so in
-        // the status keeps anything scripted against this honest.
-        return send(res, 401, loginView(layout, { error: result.error, next: f.get('next') }));
+        // the status keeps anything scripted against this honest. Mounted there
+        // is no form to render here, so it is a signpost to the one there is.
+        return send(
+          res,
+          401,
+          B ? deniedView(result.error) : loginView(layout, { error: result.error, next: f.get('next') })
+        );
       }
+      // Where to land. The site's form carries no destination — it is one page
+      // for two sign-ins and cannot know one — so a redirect that came from a
+      // deep link left it in a cookie. Take that when the form said nothing.
+      const asked = f.get('next');
+      const target = asked && asked !== '/' ? asked : readNext(req);
       // Only ever redirect to a path on this admin. An open redirect here would
       // turn the login into a way of laundering a link to somewhere else.
-      res.writeHead(303, { Location: u(safeNext(f.get('next'))), 'Set-Cookie': result.cookie });
+      res.writeHead(303, {
+        Location: u(safeNext(target)),
+        'Set-Cookie': [result.cookie, clearNextCookie({ secure })],
+      });
       return res.end();
     }
 
     if (method === 'POST' && path === '/logout') {
       res.writeHead(303, {
-        Location: u('/login'),
+        // Out through the same door everyone comes in by: the site's sign-in
+        // page when mounted, the admin's own when it is running alone.
+        Location: B ? LOGIN_PATH : u('/login'),
         'Set-Cookie': auth.logoutCookie({ secure: isSecureRequest(req) }),
       });
       return res.end();
@@ -921,11 +999,12 @@ export const handler = async (req, res) => {
       // rather than as protected.
       const reading = method === 'GET' || method === 'HEAD';
       if (!reading) {
-        // A POST from a stale tab: send it to the login rather than silently
-        // dropping it, so it is obvious the session expired.
-        return send(res, 401, loginView(layout, { error: 'Your session expired. Sign in again.', next: '/' }));
+        // A POST from a stale tab: say so rather than silently dropping it, so
+        // it is obvious the session expired.
+        const expired = 'Your session expired. Sign in again.';
+        return send(res, 401, B ? deniedView(expired) : loginView(layout, { error: expired, next: '/' }));
       }
-      return redirect(res, `/login?next=${encodeURIComponent(path + url.search)}`);
+      return toLogin(req, res, path + url.search);
     }
 
     /* ------------------------------------------------------------- pricing */
@@ -1273,7 +1352,7 @@ export const handler = async (req, res) => {
 
     if (method === 'GET' && path.startsWith('/edit/')) {
       const post = await postBySlug(decodeURIComponent(path.slice(6)));
-      if (!post) return send(res, 404, layout('Not found', `<h1>No such post</h1><p><a href="${B}/">Back</a></p>`));
+      if (!post) return send(res, 404, layout('Not found', `<h1>No such post</h1><p><a href="${HOME}">Back</a></p>`));
       const f = url.searchParams.get('ok') ? flashOk(url.searchParams.get('ok')) : '';
       return send(res, 200, editView(await loadEdit(post), f));
     }
@@ -1382,7 +1461,7 @@ export const handler = async (req, res) => {
       return redirect(res, '/');
     }
 
-    send(res, 404, layout('Not found', `<h1>Not found</h1><p><a href="${B}/">Back to posts</a></p>`));
+    send(res, 404, layout('Not found', `<h1>Not found</h1><p><a href="${HOME}">Back to posts</a></p>`));
   } catch (err) {
     // A handler that already started the response cannot be given a new one:
     // writeHead would throw again, and this is the last catch there is, so that

@@ -30,6 +30,12 @@ const PORT = Number(process.env.ADMIN_PORT) || 8099;
 //   ADMIN_URL=http://127.0.0.1:8080/admin node admin/test-routes.mjs
 const BASE = process.env.ADMIN_URL || `http://127.0.0.1:${PORT}`;
 
+// Mounted inside the site, or running on its own? It decides one thing that
+// matters here: where signing in happens. Mounted, the only sign-in form is the
+// site's /login — the one the header's Log in button opens — and the admin
+// redirects to it. Alone, the admin renders its own at /login.
+const MOUNTED = /\/admin\b/.test(BASE);
+
 let failed = 0;
 const ok = (name) => console.log(`  ok    ${name}`);
 const bad = (name, why) => {
@@ -53,11 +59,21 @@ const fetch = (url, opts = {}) =>
 const USER = process.env.ADMIN_TEST_USER || process.env.ADMIN_USER || 'admin';
 const PASSWORD = process.env.ADMIN_TEST_PASSWORD || '';
 
-/** Is the admin asking us to sign in? */
+/**
+ * Is the admin asking us to sign in?
+ *
+ * Answered by following the redirects and looking at where we land, not by
+ * matching one status against one Location. A host configured for no trailing
+ * slashes answers `/admin/` with its own 308 to `/admin` before the request
+ * reaches the admin at all — so the single-hop check saw a 308, decided no
+ * login was configured, skipped signing in, and every write in the suite then
+ * failed with 401. Which reads as "the deployed admin is broken" and is not.
+ */
 const loginRequired = async () => {
-  const res = await rawFetch(`${BASE}/`, { redirect: 'manual' });
-  // Mounted, the location is /admin/login rather than /login.
-  return res.status === 303 && String(res.headers.get('location')).includes('/login');
+  const res = await rawFetch(BASE, { redirect: 'follow' });
+  if (/\/login\b/.test(res.url)) return true;
+  // Some hosts serve the login without changing the URL; check the page itself.
+  return (await res.text()).includes('name="password"');
 };
 
 const signIn = async (username, password) => {
@@ -140,16 +156,23 @@ if (gated) {
     process.exit(1);
   }
 
+  // The root is `BASE` itself, not `BASE + '/'`. A host configured for no
+  // trailing slashes answers `/admin/` with its own 308 to `/admin` before the
+  // admin sees it, so asking for the slashed form tests the host's redirect
+  // rules rather than the admin's guard.
   for (const [name, path] of [
-    ['the posts page', '/'],
+    ['the posts page', ''],
     ['the content editor', '/content/features'],
     ['authors', '/reference'],
   ]) {
-    const res = await rawFetch(`${BASE}${path}`, { redirect: 'manual' });
+    // Follow the redirects and look at where we land: one hop locally, two
+    // through a host that normalises the URL first. Either way the answer to
+    // "is this closed to a stranger" is the same — you end up at the login.
+    const res = await rawFetch(`${BASE}${path}`, { redirect: 'follow' });
     check(
       `${name} is closed to a signed-out visitor`,
-      res.status === 303 && String(res.headers.get('location')).includes('/login'),
-      `got ${res.status}`
+      /\/login\b/.test(res.url),
+      `landed on ${res.url}`
     );
   }
 
@@ -164,12 +187,28 @@ if (gated) {
   // HEAD only asks for a page, so it belongs with GET. Treated as its own
   // method it matched no route, fell through to the sign-in redirect, and did
   // the same again on the login page — a loop every link checker walks into.
-  const head = await rawFetch(`${BASE}/`, { method: 'HEAD', redirect: 'manual' });
-  check('a signed-out HEAD redirects rather than 401ing', head.status === 303, `got ${head.status}`);
+  const head = await rawFetch(BASE, { method: 'HEAD', redirect: 'manual' });
+  check(
+    'a signed-out HEAD redirects rather than 401ing',
+    head.status >= 300 && head.status < 400,
+    `got ${head.status}`
+  );
 
+  // Mounted, the admin has no sign-in form of its own: this path is an old
+  // link, and it hands off to the site's /login — the one form, for both the
+  // product and this admin. Standalone there is no site, so it renders one.
   const headLogin = await rawFetch(`${BASE}/login`, { method: 'HEAD', redirect: 'manual' });
-  check('HEAD on the login page answers', headLogin.status === 200, `got ${headLogin.status}`);
-  check('and sends no body', (await headLogin.text()) === '', 'a body came back');
+  if (MOUNTED) {
+    const to = String(headLogin.headers.get('location') || '');
+    check(
+      'the admin keeps no second sign-in form',
+      headLogin.status === 303 && to === '/login',
+      `got ${headLogin.status} -> "${to}"`
+    );
+  } else {
+    check('HEAD on the login page answers', headLogin.status === 200, `got ${headLogin.status}`);
+    check('and sends no body', (await headLogin.text()) === '', 'a body came back');
+  }
 
   const followed = await rawFetch(`${BASE}/`, { method: 'HEAD' });
   check('HEAD does not loop', followed.status === 200, `got ${followed.status}`);
@@ -185,11 +224,14 @@ if (gated) {
   // decided by the username: the admin's is checked here, anything else is a
   // customer and belongs at the product app. Only meaningful when mounted,
   // because /login is a page of the site.
-  if (BASE.includes('/admin')) {
-    const viaSite = (username, password) =>
+  if (MOUNTED) {
+    const viaSite = (username, password, cookie) =>
       rawFetch(`${BASE}/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          ...(cookie ? { Cookie: cookie } : {}),
+        },
         body: new URLSearchParams({ from: 'site', next: '/', username, password }).toString(),
         redirect: 'manual',
       });
@@ -215,6 +257,28 @@ if (gated) {
       String(inAdmin.headers.get('set-cookie') || '').includes('cl_admin='),
       'no cookie issued'
     );
+
+    // A deep link met while signed out. /login is a built static page: it
+    // cannot read a ?next= out of its own URL and put it in the form, so the
+    // admin remembers the destination in a short-lived cookie instead, and the
+    // sign-in that follows lands where the visitor was actually going.
+    const sent = await rawFetch(`${BASE}/plans`, { redirect: 'manual' });
+    const remembered = String(sent.headers.get('set-cookie') || '');
+    check(
+      'a deep link redirects to the site form',
+      sent.status === 303 && sent.headers.get('location') === '/login',
+      `got ${sent.status} -> "${sent.headers.get('location')}"`
+    );
+    check('and is remembered in a cookie', /cl_admin_next=%2Fplans/.test(remembered), `got "${remembered}"`);
+
+    const resumed = await viaSite(USER, PASSWORD, remembered.split(';')[0]);
+    const landed = String(resumed.headers.get('location') || '');
+    check('and the sign-in lands there', landed.endsWith('/plans'), `got "${landed}"`);
+    check(
+      'and the cookie is spent',
+      String(resumed.headers.get('set-cookie') || '').includes('cl_admin_next=;'),
+      'it was left behind'
+    );
   }
 
   const good = await signIn(USER, PASSWORD);
@@ -239,8 +303,13 @@ if (gated) {
     );
   }
 
-  const after = await fetch(`${BASE}/`, { redirect: 'manual' });
-  check('the session opens the admin', after.status === 200, `got ${after.status}`);
+  // Followed, because the mount root may be normalised by the host first.
+  const after = await fetch(BASE, { redirect: 'follow' });
+  check(
+    'the session opens the admin',
+    after.status === 200 && !/\/login\b/.test(after.url),
+    `${after.status} at ${after.url}`
+  );
 } else {
   console.log('  --    no login configured; running without one');
 }
@@ -467,22 +536,54 @@ if (gated) {
 //     down. Every check below is followed by one that the server is still up,
 //     because "still running" is the actual assertion.
 {
+  // A page of the admin that always answers 200 — which is not the same page in
+  // both shapes. Standalone, /login is the admin's own form and needs no
+  // session. Mounted, it has no form to serve and redirects to the site's, so
+  // the page to ask for is the posts list, behind the session step 0 opened.
+  const probe = () => (MOUNTED ? fetch(`${BASE}/`) : rawFetch(`${BASE}/login`));
+
   const alive = async (why) => {
-    const res = await rawFetch(`${BASE}/login`).catch(() => null);
+    const res = await probe().catch(() => null);
     check(`the admin survives ${why}`, res?.status === 200, res ? `got ${res.status}` : 'connection refused');
   };
 
-  const font = await rawFetch(`${BASE}/_asset/fonts/inter-latin.woff2`);
-  check('a real asset is served', font.status === 200, `got ${font.status}`);
-  check('it is served as a font', font.headers.get('content-type') === 'font/woff2', font.headers.get('content-type'));
+  // The fonts the admin actually asks for, read off its own stylesheet rather
+  // than assumed. Mounted, it borrows the site's /fonts/ — deployed it has to,
+  // because a serverless function ships the code it imports and not a public/
+  // directory read at a runtime path. Standalone it serves them itself from
+  // /_asset/. Hardcoding either one tests the wrong admin half the time.
+  const styled = await probe().then((r) => r.text());
+  const fontUrls = [...styled.matchAll(/url\('([^']+\.woff2)'\)/g)].map((m) => m[1]);
+  check('the admin references its fonts', fontUrls.length >= 1, `found ${fontUrls.length}`);
 
-  const missing = await rawFetch(`${BASE}/_asset/fonts/does-not-exist.woff2`);
-  check('a missing asset is a 404', missing.status === 404, `got ${missing.status}`);
+  for (const href of fontUrls) {
+    const at = new URL(href, BASE);
+    const got = await rawFetch(at);
+    check(`the font it asks for is served (${href})`, got.status === 200, `got ${got.status}`);
+    check(
+      `and as a font (${href})`,
+      String(got.headers.get('content-type') || '').startsWith('font/'),
+      got.headers.get('content-type')
+    );
+    // Fonts load before any session exists, so they must not be behind the login.
+    check(`and needs no session (${href})`, !/\/login\b/.test(got.url), `landed on ${got.url}`);
+  }
+
+  const missing = await rawFetch(`${BASE}/_asset/fonts/does-not-exist.woff2`, { redirect: 'manual' });
+  check('a missing asset is not served', missing.status !== 200, `got ${missing.status}`);
   await alive('a request for a missing asset');
 
+  // Asserted on the body, not the status: a host that normalises the escaped
+  // slashes turns this into an ordinary path, which then meets the login and
+  // answers 200 with a sign-in page. That is a refusal too — what matters is
+  // that no part of .env came back.
   const escaped = await rawFetch(`${BASE}/_asset/..%2f..%2f.env`);
-  check('an escaping path does not serve a file', escaped.status !== 200, `got ${escaped.status}`);
-  check('and does not leak the secret', !(await escaped.text()).includes('ADMIN_PASSWORD_HASH'), '.env was served');
+  const escapedBody = await escaped.text();
+  check(
+    'an escaping path does not serve the file',
+    !/ADMIN_PASSWORD_HASH|scrypt\$|postgres(ql)?:\/\//.test(escapedBody),
+    '.env content came back'
+  );
   await alive('a path that tries to escape public/');
 
   // fetch() normalises the .. away before sending, so this arrives as
@@ -494,8 +595,8 @@ if (gated) {
   check('and returns no source either way', !(await deep.text()).includes('NEON_URL'), 'source was served');
   await alive('a traversal to a source file');
 
-  // The asset route is deliberately open, but only to what is already public.
-  check('assets need no session', font.status === 200, 'the font route is behind the login');
+  // Whether the admin is reachable at all without a session is covered by the
+  // per-font check above; nothing further to assert here.
 }
 
 // 14. The posts and plans editors still work.
@@ -516,6 +617,14 @@ if (gated) {
 if (gated) {
   const res = await fetch(`${BASE}/logout`, { method: 'POST', redirect: 'manual' });
   check('signing out redirects to the login', res.status === 303, `got ${res.status}`);
+
+  // Out through the door people come in by: the site's one form when mounted.
+  const out = String(res.headers.get('location') || '');
+  check(
+    MOUNTED ? 'and to the site sign-in page' : 'and to the admin sign-in page',
+    MOUNTED ? out === '/login' : out.endsWith('/login'),
+    `got "${out}"`
+  );
 
   const cleared = res.headers.get('set-cookie') || '';
   check('signing out clears the cookie', /cl_admin=;|Max-Age=0/.test(cleared), 'cookie not cleared');

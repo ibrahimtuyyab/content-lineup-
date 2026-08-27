@@ -146,7 +146,7 @@ admin/                 The editor: posts, plans, site content, authors
   platform.mjs         Local or deployed, and what that changes
   test-vercel.mjs      Reproduces the deployment on this machine
   server.mjs           The HTTP server, the page chrome, the post and plan editors
-  auth.mjs             The login: password hashing, session cookie, sign-in page
+  auth.mjs             The login: password hashing, session cookie, standalone form
   form.mjs             Builds a form from a content block's shape, and parses it back
   validate.mjs         Per-block checks that run before any content is written
   content-views.mjs    The site-content and authors/categories pages
@@ -282,6 +282,28 @@ only applies when the admin is mounted, since `/login` is a page of the site;
 `npm run admin` on its own keeps its own plain admin login.
 
 The page is `noindex`, kept out of the sitemap, and `Disallow`ed in robots.txt.
+
+### It is the only sign-in page there is
+
+Mounted, the admin has no form of its own. Ask for `/admin` — or any page under
+it — without a session and you are sent to `/login`, the same page the header's
+**Log in** button opens; `/admin/login` is kept only as a redirect for old links
+and bookmarks, and signing out lands there too. There used to be a second,
+plainer form served at `/admin`, which meant two sign-in pages on one origin
+asking the same two questions. `npm run admin` on its own has no site next to it
+and no `/login` to send anyone to, so there the plain form is still what you get.
+
+Where you were headed survives the trip in a short-lived cookie
+(`cl_admin_next`, HttpOnly, `Path=/admin`, ten minutes) rather than in the URL:
+`/login` is static HTML built once, so it cannot read a `?next=` out of its own
+address and write it into the form, and the site carries no JavaScript that
+could. Follow a link to `/admin/plans` while signed out and that is where the
+sign-in puts you. It is read through the same `safeNext()` as everything else,
+so it can only ever name a path on the admin.
+
+The one thing that still answers at `/admin/login` is a POST the form did not
+make — a tab left open past its session, or something scripted. That gets a 401
+saying so, with a link to `/login` and no form on it.
 
 ### Repointing Log in is opt-in, and off by default
 

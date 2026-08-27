@@ -15,3 +15,10 @@ data/*.db-shm
 data/content-cache.json
 data/pricing-cache.json
 data/site-cache.json
+
+# Vercel CLI link (project + org id, written by `vercel link`)
+.vercel/
+
+# Every .env variant is a secret — except the checked-in template.
+.env*
+!.env.example

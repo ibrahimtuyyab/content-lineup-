@@ -60,7 +60,7 @@ const askHidden = (question) =>
     const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
     const onData = (char) => {
       // Redraw the prompt with nothing after it, so the password never appears.
-      if (!['\r', '\n', ''].includes(String(char))) {
+      if (!['\r', '\n', '\u0004'].includes(String(char))) {
         process.stdout.write('\x1b[2K\x1b[G' + question);
       }
     };

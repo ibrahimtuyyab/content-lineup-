@@ -259,6 +259,43 @@ export const safeNext = (next) => {
   return s.startsWith('/') && !s.startsWith('//') ? s : '/';
 };
 
+/* --------------------------------------------------- where you were headed */
+
+const NEXT = 'cl_admin_next';
+
+/**
+ * The page an unauthenticated visitor asked for, carried across the sign-in.
+ *
+ * Mounted inside the site, the form they are sent to is /login — a page of the
+ * static build, rendered once and served from a CDN. It cannot read a `?next=`
+ * out of its own URL and write it into the form, and the site ships no
+ * JavaScript that could. So the destination travels the one way a static page
+ * cannot lose it: in a cookie scoped to the admin, which the browser attaches
+ * to the sign-in POST because that POST goes to /admin/login.
+ *
+ * Short-lived and HttpOnly like the session, and only ever a path on this
+ * admin — safeNext() is applied on the way in and again on the way out.
+ */
+export const nextCookie = (path, { secure = false } = {}) =>
+  `${NEXT}=${encodeURIComponent(safeNext(path))}; Path=${B || '/'}; HttpOnly; SameSite=Strict` +
+  `${secure ? '; Secure' : ''}; Max-Age=600`;
+
+/** Forget it. Sent with the session the moment the sign-in succeeds. */
+export const clearNextCookie = ({ secure = false } = {}) =>
+  `${NEXT}=; Path=${B || '/'}; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}; Max-Age=0`;
+
+/** What the last redirect to the sign-in remembered, or the admin's root. */
+export const readNext = (req) => safeNext(readCookies(req, NEXT)[0]);
+
+/**
+ * The admin's own sign-in form — for when it is running on its own.
+ *
+ * Mounted inside the site there is one sign-in page and this is not it: /login
+ * asks the same two questions for the product and for this admin, and decides
+ * from the username which one you meant. Two forms on one origin is one more
+ * than anybody needs, so the mounted admin sends people there instead and this
+ * is never rendered. `npm run admin` has no site next to it, and still does.
+ */
 export const loginView = (layout, { error, next } = {}) =>
   layout(
     'Sign in',

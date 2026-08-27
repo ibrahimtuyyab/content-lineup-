@@ -461,6 +461,14 @@ Some details worth knowing:
   would never be stored. `SameSite=Strict` is what covers the cross-site case.
 - **Leave `ADMIN_SESSION_SECRET` blank** and one is generated per start — which
   works, but signs you out on every restart.
+- **Deployed, the deployment id signs alongside the secret**, so a deploy ends
+  every session that is still out there. A serverless admin has no restart to
+  speak of: the secret is an environment variable that sits there for months, so
+  without this a cookie minted once stays valid, on any machine that still has
+  it, through every deploy in between. Now shipping is also how you clear a
+  session you are no longer sure about — no dashboard, no rotation. The cost is
+  signing in again after each deploy. Locally nothing changes, since there is no
+  such variable to mix in.
 - **Eight wrong attempts locks the login for 15 minutes**, per process.
 - **A wrong username and a wrong password give the same message**, and take the
   same time, so the form does not tell an attacker which half they got right.

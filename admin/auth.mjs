@@ -174,7 +174,30 @@ export function createAuth(env = process.env) {
   // A session secret that changes per start is a working default: it means
   // every restart logs you out, which is a nuisance but never a hole. Setting
   // ADMIN_SESSION_SECRET in .env is what makes sessions survive a restart.
-  const key = secret || randomBytes(32).toString('hex');
+  //
+  // Deployed, the deployment's own id is mixed in. A serverless admin has no
+  // "restart" to speak of — the secret is an environment variable that sits
+  // there for months, so a cookie minted once stays valid for as long as its
+  // own expiry allows, on any machine that still has it, through every deploy
+  // in between. Signing with the deployment as well means shipping is also how
+  // you clear every session: the next deploy invalidates all of them, and
+  // whoever holds one is asked for the password again. The cost is having to
+  // sign in after each deploy, which is a fair price for being able to end a
+  // session you are no longer sure about without touching a dashboard.
+  //
+  // Locally there is no such variable, so nothing changes: the secret alone
+  // signs, and `npm start` keeps you signed in across restarts as before.
+  // Three names for the same thing, in the order they are most likely to be
+  // there. All of them are system variables the platform sets per deployment,
+  // and all of them are absent if a project has turned system variables off —
+  // in which case this falls back to the secret alone and behaves as it did.
+  const deployment = (
+    env.VERCEL_DEPLOYMENT_ID ||
+    env.VERCEL_GIT_COMMIT_SHA ||
+    env.VERCEL_URL ||
+    ''
+  ).trim();
+  const key = secret ? `${secret}${deployment && `.${deployment}`}` : randomBytes(32).toString('hex');
 
   return {
     enabled: true,

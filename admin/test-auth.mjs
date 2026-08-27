@@ -83,6 +83,33 @@ check(
   'the signature is not checked against the secret'
 );
 
+// Deployed, the deployment id signs alongside the secret, so shipping is what
+// ends every session that is still out there — a cookie minted by the last
+// deployment does not open this one. The secret is identical in both; only the
+// deployment differs.
+{
+  const one = createAuth({ ...env, VERCEL_DEPLOYMENT_ID: 'dpl_one' });
+  const two = createAuth({ ...env, VERCEL_DEPLOYMENT_ID: 'dpl_two' });
+  const minted = decodeURIComponent(/cl_admin=([^;]*)/.exec(one.login('teczon', 'Sw0rdfish!').cookie)[1]);
+  check(
+    'a session opens the deployment that minted it',
+    one.isLoggedIn(asReq(`cl_admin=${encodeURIComponent(minted)}`)),
+    'its own deployment refused it'
+  );
+  check(
+    'and is refused by the next deployment',
+    !two.isLoggedIn(asReq(`cl_admin=${encodeURIComponent(minted)}`)),
+    'a session survived a deploy'
+  );
+  check(
+    'a local session is unaffected',
+    auth.isLoggedIn(asReq(`cl_admin=${encodeURIComponent(
+      decodeURIComponent(/cl_admin=([^;]*)/.exec(auth.login('teczon', 'Sw0rdfish!').cookie)[1])
+    )}`)),
+    'signing in with no deployment id broke'
+  );
+}
+
 /* ------------------------------------------------- sessions and the mount */
 
 // A cookie is scoped to a host and a path, never to a port. The editor running
